@@ -10,6 +10,8 @@ public class CameraShader : MonoBehaviour {
     public void Awake() {
         material = ShaderRegistry.UI_DEFAULT_MATERIAL;
         luashader = new LuaSpriteShader("camera", gameObject);
+        Camera cam = GameObject.Find("Main Camera").GetComponent<Camera>();
+        cam.depthTextureMode = DepthTextureMode.Depth;
     }
 
     private void OnRenderImage(Texture source, RenderTexture destination) {
