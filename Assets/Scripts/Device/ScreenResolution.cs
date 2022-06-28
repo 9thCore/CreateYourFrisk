@@ -39,7 +39,9 @@ public class ScreenResolution : MonoBehaviour {
             FSBorderRect = new Rect(inset/2, 0f, 1f-inset, 1f);
         }
 
-        SceneManager.sceneLoaded += BoxCameras2;
+        #if !UNITY_EDITOR
+            SceneManager.sceneLoaded += BoxCameras2;
+        #endif
 
         // Load BGCamera Prefab and have it be in every scene, from the moment CYF starts.
         // This is necessary so BGCamera will clear out old frames outside of the Main Camera's display rect.
@@ -161,8 +163,6 @@ public class ScreenResolution : MonoBehaviour {
         Camera cam, cam2 = null;
         if (GlobalControls.isInFight && UIController.instance != null && (UIController.instance.encounter == null || !UIController.instance.encounter.gameOverStance)) {
             cam = GameObject.Find("Main Camera").GetComponent<Camera>();
-            if (GameOverBehavior.gameOverContainer == null)
-                GameOverBehavior.gameOverContainer = GameObject.Find("GameOverContainer");
             cam2 = GameOverBehavior.gameOverContainer.transform.GetComponentInChildren<Camera>(true);
         } else
             cam = Camera.main;
