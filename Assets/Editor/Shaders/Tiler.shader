@@ -18,6 +18,9 @@ Shader "CYF/Tiler"
 
         TilesX("Tile count horizontally", Float) = 1
         TilesY("Tile count vertically", Float) = 1
+
+        OffsetX("Offset horizontal", Float) = 0
+        OffsetY("Offset vertical", Float) = 0
     }
 
     SubShader
@@ -86,7 +89,9 @@ Shader "CYF/Tiler"
             float4 _MainTex_ST;
             float TilesX;
             float TilesY;
-            float TileOffsetX;
+
+            float OffsetX;
+            float OffsetY;
 
             v2f vert(appdata_t v)
             {
@@ -107,8 +112,8 @@ Shader "CYF/Tiler"
 
                 half2 tileUV;
 
-                tileUV.x = (IN.uv.x*TilesX) % 1;
-                tileUV.y = (IN.uv.y*TilesY) % 1;
+                tileUV.x = (IN.uv.x*TilesX) % 1 + OffsetX;
+                tileUV.y = (IN.uv.y*TilesY) % 1 + OffsetY;
 
                 half4 color = (tex2D(_MainTex, tileUV) + _TextureSampleAdd) * IN.color;
 
