@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
+using UnityEngine.UI;
 using Object = UnityEngine.Object;
 
 /// <summary>
@@ -176,7 +177,6 @@ public static class UnitaleUtil {
         for (int i = fromLetter; i <= toLetter; i++) {
             switch (txtmgr.textQueue[txtmgr.currentLine].Text[i]) {
                 case '[':
-
                     string str = ParseCommandInline(txtmgr.textQueue[txtmgr.currentLine].Text, ref i);
                     if (str == null) {
                         if (txtmgr.Charset.Letters.ContainsKey(txtmgr.textQueue[txtmgr.currentLine].Text[i]))
@@ -207,17 +207,22 @@ public static class UnitaleUtil {
     }
 
     public static float CalcTextHeight(TextManager txtmgr, int fromLetter = -1, int toLetter = -1) {
-        float maxY = -999, minY = 999;
+        float maxY = Mathf.NegativeInfinity, minY = Mathf.Infinity;
+
         if (fromLetter == -1) fromLetter = 0;
         if (toLetter == -1)   toLetter = txtmgr.textQueue[txtmgr.currentLine].Text.Length;
         if (fromLetter > toLetter || fromLetter < 0 || toLetter > txtmgr.textQueue[txtmgr.currentLine].Text.Length) return -1;
         if (fromLetter == toLetter)                                                                                 return 0;
-        for (int i = fromLetter; i < toLetter; i++) {
-            if (!txtmgr.Charset.Letters.ContainsKey(txtmgr.textQueue[txtmgr.currentLine].Text[i])) continue;
+
+        for (int i = 0; i < txtmgr.letterReferences.Count; i++) {
+            Image im = txtmgr.letterReferences[i];
+            int index = txtmgr.letterIndexes[im];
+
+            if (index < fromLetter || index > toLetter) continue;
             if (txtmgr.letterPositions[i].y < minY)
                 minY = txtmgr.letterPositions[i].y;
-            if (txtmgr.letterPositions[i].y + txtmgr.Charset.Letters[txtmgr.textQueue[txtmgr.currentLine].Text[i]].textureRect.size.y > maxY)
-                maxY = txtmgr.letterPositions[i].y + txtmgr.Charset.Letters[txtmgr.textQueue[txtmgr.currentLine].Text[i]].textureRect.size.y;
+            if (txtmgr.letterPositions[i].y + txtmgr.Charset.Letters[txtmgr.textQueue[txtmgr.currentLine].Text[index]].textureRect.size.y > maxY)
+                maxY = txtmgr.letterPositions[i].y + txtmgr.Charset.Letters[txtmgr.textQueue[txtmgr.currentLine].Text[index]].textureRect.size.y;
         }
         return maxY - minY;
     }
@@ -655,5 +660,55 @@ public static class UnitaleUtil {
             script.Call(func, param);
         } catch (InterpreterException ex) { DisplayLuaError(script.scriptname, FormatErrorSource(ex.DecoratedMessage, ex.Message) + ex.Message); }
         return true;
+    }
+
+    public static Transform GetTransform(object o) {
+        LuaSpriteController sSelf = o as LuaSpriteController;
+        if (sSelf != null) return sSelf.img.transform;
+        LuaTextManager tSelf = o as LuaTextManager;
+        if (tSelf != null) return tSelf.GetContainer().transform;
+        ProjectileController pSelf = o as ProjectileController;
+        if (pSelf != null) return pSelf.sprite.img.transform;
+        LuaCYFObject oSelf = o as LuaCYFObject;
+        if (oSelf != null) return oSelf.transform;
+        return null;
+    }
+
+    public static DynValue GetObject(Transform t) {
+        if (t == null) {
+            Debug.Log("Truly nil!");
+            return DynValue.NewNil();
+        }
+
+        GameObject go = t.gameObject;
+        if (LuaSpriteController.HasSpriteController(go))
+            return UserData.Create(LuaSpriteController.GetOrCreate(go));
+        if (t.GetComponent<LuaProjectile>() != null)
+            return UserData.Create(t.GetComponent<LuaProjectile>().ctrl);
+        for (int i = 0; i < t.childCount; i++) {
+            Transform child = t.GetChild(i);
+            if (child.GetComponent<LuaTextManager>() != null)
+                return UserData.Create(child.GetComponent<LuaTextManager>());
+        }
+        return UserData.Create(new LuaCYFObject(t));
+    }
+
+    public static DynValue GetObjectParent(Transform t) {
+        return GetObject(t.parent);
+    }
+
+    public static void SetObjectParent(object self, object p) {
+        if (p == null)
+            throw new CYFException("SetParent(): Can't set nil as parent.");
+
+        LuaSpriteController sSelf = self as LuaSpriteController;
+        LuaSpriteController sParent = p as LuaSpriteController;
+
+        if (sSelf != null && sSelf.tag == "event")
+            throw new CYFException("sprite.SetParent(): Cannot set the prent of an overworld event's sprite.");
+        if ((sSelf != null && sSelf.tag == "letter") ^ (sParent != null && sParent.tag == "letter"))
+            throw new CYFException("sprite.SetParent(): Cannot be used between letter sprites and other objects.");
+
+        GetTransform(self).SetParent(GetTransform(p));
     }
 }

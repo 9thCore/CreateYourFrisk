@@ -34,6 +34,10 @@ public class LuaPlayerUI {
         get { return UIStats.instance.hpTextMan; }
     }
 
+    public LuaTextManager maintext {
+        get { return UIController.instance.mainTextManager; }
+    }
+
 
     public static LuaSpriteController fightbtn {
         get { return LuaSpriteController.GetOrCreate(UIController.instance.fightButton.gameObject); }
@@ -49,6 +53,11 @@ public class LuaPlayerUI {
 
     public static LuaSpriteController mercybtn {
         get { return LuaSpriteController.GetOrCreate(UIController.instance.mercyButton.gameObject); }
+    }
+
+
+    public static LuaCYFObject root {
+        get { return new LuaCYFObject(Object.FindObjectOfType<Canvas>().transform); }
     }
 
 

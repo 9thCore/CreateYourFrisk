@@ -351,6 +351,14 @@ public class LuaSpriteController {
         }
     }
 
+    public int characterNumber {
+        get {
+            if (tag != "letter")
+                throw new CYFException("You can only use characterNumber on letters!");
+            return img.GetComponent<Letter>().characterNumber;
+        }
+    }
+
     /*
     public bool filter {
         get { return img.sprite.texture.filterMode != FilterMode.Point; }
@@ -392,6 +400,11 @@ public class LuaSpriteController {
         return ctrl;
     }
 
+    public static bool HasSpriteController(GameObject go) {
+        CYFSprite newSpr = go.GetComponent<CYFSprite>();
+        return newSpr != null && newSpr.ctrl != null;
+    }
+
     // Changes the sprite of this instance
     public void Set(string name) {
         // Change the sprite
@@ -414,18 +427,6 @@ public class LuaSpriteController {
         Scale(xScale, yScale);
         if (tag == "projectile")
             img.GetComponent<Projectile>().needUpdateTex = true;
-    }
-
-    // Sets the parent of a sprite.
-    public void SetParent(LuaSpriteController parent) {
-        if (parent == null)                                               throw new CYFException("sprite.SetParent() can't set null as the sprite's parent.");
-        if (tag == "event" || parent != null && parent.tag == "event")    throw new CYFException("sprite.SetParent() can not be used with an Overworld Event's sprite.");
-        if (tag == "letter" ^ (parent != null && parent.tag == "letter")) throw new CYFException("sprite.SetParent() can not be used between letter sprites and other sprites.");
-        try {
-            GetTarget().SetParent(parent.img.transform);
-            if (img.GetComponent<MaskImage>())
-                img.GetComponent<MaskImage>().inverted = parent._masked == MaskMode.INVERTEDSPRITE || parent._masked == MaskMode.INVERTEDSTENCIL;
-        } catch { throw new CYFException("sprite.SetParent(): You tried to set a removed sprite/nil sprite as this sprite's parent."); }
     }
 
     // Sets the pivot of a sprite (its rotation point)
@@ -782,5 +783,50 @@ public class LuaSpriteController {
         if (img.transform.parent != null && img.transform.parent.name == "SpritePivot")
             target = target.parent;
         return target;
+    }
+
+    ////////////////////
+    // Children stuff //
+    ////////////////////
+
+    public string name {
+        get { return img.name; }
+    }
+
+    public int childIndex {
+        get { return img.transform.GetSiblingIndex() + 1; }
+        set { img.transform.SetSiblingIndex(value - 1); }
+    }
+    public int childCount {
+        get { return img.transform.childCount; }
+    }
+
+    public DynValue GetParent() {
+        return UnitaleUtil.GetObjectParent(img.transform);
+    }
+
+    public void SetParent(object parent) {
+        UnitaleUtil.SetObjectParent(this, parent);
+        LuaSpriteController sParent = parent as LuaSpriteController;
+        ProjectileController pParent = parent as ProjectileController;
+        if (pParent != null)
+            sParent = pParent.sprite;
+        if (sParent == null)
+            return;
+        if (img.GetComponent<MaskImage>())
+            img.GetComponent<MaskImage>().inverted = sParent._masked == MaskMode.INVERTEDSPRITE || sParent._masked == MaskMode.INVERTEDSTENCIL;
+    }
+
+    public DynValue GetChild(int index) {
+        if (index > childCount)
+            throw new CYFException("This object only has " + childCount + " children yet you try to get its child #" + index);
+        return UnitaleUtil.GetObject(img.transform.GetChild(--index));
+    }
+
+    public DynValue[] GetChildren() {
+        DynValue[] tab = new DynValue[img.transform.childCount];
+        for (int i = 0; i < img.transform.childCount; i++)
+            tab[i] = GetChild(i + 1);
+        return tab;
     }
 }

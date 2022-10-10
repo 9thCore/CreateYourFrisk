@@ -21,25 +21,25 @@ using UnityEngine.UI;
 /// </summary>
 public class UIController : MonoBehaviour {
     public static UIController instance;    // The instance of this class, only one UIController should exist at all times
-    public TextManager mainTextManager;     // Main text manager in the arena
+    public LuaTextManager mainTextManager;  // Main text manager in the arena
 
-    public static Sprite fightButtonSprite, actButtonSprite, itemButtonSprite, mercyButtonSprite;  // UI button sprites when the soul is selecting them
+    public static Sprite fightButtonSprite, actButtonSprite, itemButtonSprite, mercyButtonSprite;   // UI button sprites when the soul is selecting them
     public Image fightButton, actButton, itemButton, mercyButton;                                   // UI button objects in the scene
 
-    public Actions action = Actions.FIGHT;     // Current action chosen when entering the state ENEMYSELECT
+    public Actions action = Actions.FIGHT;      // Current action chosen when entering the state ENEMYSELECT
     public Actions forcedAction = Actions.NONE; // Action forced by the user previously for the next time we enter the state ENEMYSELECT
 
     private GameObject arenaParent; // Arena's parent, which will be used to manipulate it
     public GameObject psContainer;  // Container for any particle effect used when using sprite.Dust() and when sparing or killing an enemy
     private AudioSource uiAudio;    // AudioSource only used to play the sound menumove when the Player moves in menus
 
-    internal EnemyEncounter encounter;               // Main encounter script
+    internal EnemyEncounter encounter;                  // Main encounter script
     [HideInInspector] public FightUIController fightUI; // Main Player attack handler
 
-    private readonly Vector2 initialHealthPos = new Vector2(250, -10); // Initial health bar position for target selection
+    private readonly Vector2 initialHealthPos = new Vector2(250, -2); // Initial health bar position for target selection
 
-    public TextManager[] monsterDialogues;  // Enemies' dialogue bubbles' text objects appearing in the state ENEMYDIALOGUE
-    public int[] monsterDialogueEnemyID;    // Stores the ID of the associated enemy
+    public LuaTextManager[] monsterDialogues;   // Enemies' dialogue bubbles' text objects appearing in the state ENEMYDIALOGUE
+    public int[] monsterDialogueEnemyID;        // Stores the ID of the associated enemy
 
     private bool musicPausedFromRunning;    // Used to pause the BGM when trying to flee in retromode for a comedic effect
     private int runAwayAttempts;            // Amount of times the Player tried to flee unsuccessfully in this encounter
@@ -291,7 +291,7 @@ public class UIController : MonoBehaviour {
 
         if (newState == "DEFENDING" || newState == "ENEMYDIALOGUE") {
             PlayerController.instance.setControlOverride(newState != "DEFENDING");
-            mainTextManager.DestroyChars();
+            mainTextManager.SetText(DynValue.NewString(""));
             PlayerController.instance.SetPosition(ArenaManager.instance.currentX, ArenaManager.instance.currentY + 70, true);
             PlayerController.instance.GetComponent<Image>().enabled = true;
             fightButton.overrideSprite = null;
@@ -340,7 +340,7 @@ public class UIController : MonoBehaviour {
                 foreach (EnemyController enemy in encounter.EnabledEnemies)
                     FightUIController.instance.DestroyAllAttackInstances(enemy);
 
-                mainTextManager.DestroyChars();
+                mainTextManager.SetText(DynValue.NewString(""));
                 PlayerController.instance.GetComponent<Image>().enabled = false;
                 if (!fightUI.multiHit) {
                     fightUI.targetIDs = new[] { selectedEnemy };
@@ -473,13 +473,7 @@ public class UIController : MonoBehaviour {
                         if (encounter.EnabledEnemies.Length > 3)
                             if (i > 1)
                                 break;
-                        LifeBarController lifeBar = LifeBarController.Create(0, 0, 90);
-                        lifeBar.transform.SetParent(mainTextManager.transform);
-                        lifeBar.transform.SetAsFirstSibling();
-                        lifeBar.background.MoveTo(maxWidth, initialHealthPos.y - i * mainTextManager.Charset.LineSpacing);
-                        lifeBar.SetFillColor(Color.green);
-                        float hpDivide = encounter.EnabledEnemies[i].HP / (float)encounter.EnabledEnemies[i].MaxHP;
-                        lifeBar.SetInstant(hpDivide, encounter.EnabledEnemies[i].HP < 0);
+                        RenewLifeBars(0);
                     }
                 }
 
@@ -508,10 +502,9 @@ public class UIController : MonoBehaviour {
                 encounter.CallOnSelfOrChildren("EnemyDialogueStarting");
                 if (state != "ENEMYDIALOGUE")
                     return;
-                monsterDialogues = new TextManager[encounter.EnabledEnemies.Length];
+                monsterDialogues = new LuaTextManager[encounter.EnabledEnemies.Length];
                 monsterDialogueEnemyID = new int[encounter.EnabledEnemies.Length];
                 readyToNextLine = new bool[encounter.enemies.Count];
-                // TODO: Try to merge this and the other bubble-related code block
                 for (int i = 0; i < encounter.EnabledEnemies.Length; i++) {
                     messages.Remove(i);
                     messages.Add(i, encounter.EnabledEnemies[i].GetDefenseDialog());
@@ -521,37 +514,11 @@ public class UIController : MonoBehaviour {
                         SwitchState("DEFENDING");
                         break;
                     }
-                    GameObject speechBub = Instantiate(SpriteFontRegistry.BUBBLE_OBJECT);
-                    //RectTransform enemyRt = encounter.enabledEnemies[i].GetComponent<RectTransform>();
-                    TextManager sbTextMan = speechBub.GetComponent<TextManager>();
+
+                    GameObject speechBub = encounter.EnabledEnemies[i].bubbleObject;
+                    LuaTextManager sbTextMan = speechBub.GetComponentInChildren<LuaTextManager>();
                     monsterDialogues[i] = sbTextMan;
                     monsterDialogueEnemyID[i] = encounter.enemies.IndexOf(encounter.EnabledEnemies[i]);
-                    sbTextMan.SetCaller(encounter.EnabledEnemies[i].script);
-                    Image speechBubImg = speechBub.GetComponent<Image>();
-
-                    // error catcher
-                    try { SpriteUtil.SwapSpriteFromFile(speechBubImg, encounter.EnabledEnemies[i].DialogBubble, i); }
-                    catch {
-                        if (encounter.EnabledEnemies[i].DialogBubble != "UI/SpeechBubbles/")
-                            UnitaleUtil.DisplayLuaError(encounter.EnabledEnemies[i].scriptName + ": Creating a dialogue bubble",
-                                                        "The dialogue bubble \"" + encounter.EnabledEnemies[i].script.GetVar("dialogbubble") + "\" doesn't exist.");
-                        else
-                            UnitaleUtil.DisplayLuaError(encounter.EnabledEnemies[i].scriptName + ": Creating a dialogue bubble",
-                                                        "This monster has no set dialogue bubble.");
-                        return;
-                    }
-
-                    sbTextMan._textMaxWidth = (int)encounter.EnabledEnemies[i].bubbleWidth;
-                    Sprite speechBubSpr = speechBubImg.sprite;
-                    // TODO improve position setting/remove hardcoding of position setting
-                    bool reversedX = encounter.EnabledEnemies[i].sprite.xscale < 0,
-                         reversedY = encounter.EnabledEnemies[i].sprite.yscale < 0;
-
-                    speechBub.transform.SetParent(encounter.EnabledEnemies[i].transform);
-                    speechBub.GetComponent<RectTransform>().anchorMin = speechBub.GetComponent<RectTransform>().anchorMax = new Vector2(0.5f, 0.5f);
-                    speechBub.GetComponent<RectTransform>().anchoredPosition = new Vector3((encounter.EnabledEnemies[i].DialogBubblePosition.x + encounter.EnabledEnemies[i].offsets[1].x) * (reversedX ? -1 : 1),
-                                                                                           (encounter.EnabledEnemies[i].DialogBubblePosition.y + encounter.EnabledEnemies[i].offsets[1].y) * (reversedY ? -1 : 1));
-                    sbTextMan.SetOffset(speechBubSpr.border.x, -speechBubSpr.border.w);
 
                     UnderFont enemyFont = SpriteFontRegistry.Get(encounter.EnabledEnemies[i].Font ?? string.Empty) ?? SpriteFontRegistry.Get(SpriteFontRegistry.UI_MONSTERTEXT_NAME);
                     sbTextMan.SetFont(enemyFont);
@@ -560,13 +527,12 @@ public class UIController : MonoBehaviour {
                     for (int j = 0; j < monsterMessages.Length; j++)
                         monsterMessages[j] = new MonsterMessage(encounter.EnabledEnemies[i].DialoguePrefix + message[j]);
 
+                    // UpdateBubble run twice: once to feed the bubble's width to spawn the text properly,
+                    // once to update the bubble's visibility after the text has been spawned
+                    encounter.EnabledEnemies[i].UpdateBubble(i);
                     sbTextMan.SetTextQueue(monsterMessages);
-                    speechBubImg.color = new Color(speechBubImg.color.r, speechBubImg.color.g, speechBubImg.color.b, sbTextMan.letterReferences.Count(ltr => ltr != null) == 0 ? 0 : 1);
+                    encounter.EnabledEnemies[i].UpdateBubble(i);
 
-                    speechBub.GetComponent<Image>().enabled = true;
-                    if (encounter.EnabledEnemies[i].Voice != "")
-                        sbTextMan.letterSound = encounter.EnabledEnemies[i].Voice;
-                    encounter.EnabledEnemies[i].bubbleObject = speechBub;
                 }
                 break;
 
@@ -614,7 +580,6 @@ public class UIController : MonoBehaviour {
             mercyButtonSprite = SpriteRegistry.Get("UI/Buttons/mercybt_1");
         }
 
-        arenaParent = GameObject.Find("arena_border_outer");
         //canvasParent = GameObject.Find("Canvas");
         uiAudio = GetComponent<AudioSource>();
         uiAudio.clip = AudioClipRegistry.GetSound("menumove");
@@ -622,41 +587,14 @@ public class UIController : MonoBehaviour {
         instance = this;
     }
 
-    public void UpdateBubble() {
+    /// <summary>
+    /// Sets the readyToNextLine value of all bubbles to true if they don'thave any extra text to display, false otherwise
+    /// </summary>
+    public void UpdateNewlineTextState() {
         for (int i = 0; i < encounter.enemies.Count; i++) {
             try {
-                EnemyController enemy = encounter.enemies[i];
-                if (!enemy.bubbleObject)
-                    continue;
                 int monsterDialogueID = Array.IndexOf(monsterDialogueEnemyID, i);
-                if (monsterDialogues[monsterDialogueID] == null) {
-                    readyToNextLine[i] = true;
-                    continue;
-                }
-
-                if (monsterDialogues[monsterDialogueID].currentLine >= monsterDialogues[monsterDialogueID].LineCount()) {
-                    readyToNextLine[i] = true;
-                    continue;
-                }
-
-                GameObject speechBub = enemy.bubbleObject;
-                TextManager sbTextMan = speechBub.GetComponent<TextManager>();
-                sbTextMan._textMaxWidth = (int)enemy.bubbleWidth;
-                readyToNextLine[i] = false;
-                Image speechBubImg = speechBub.GetComponent<Image>();
-                speechBubImg.color = new Color(speechBubImg.color.r, speechBubImg.color.g, speechBubImg.color.b, sbTextMan.letterReferences.Count(ltr => ltr != null) == 0 ? 0 : 1);
-
-                SpriteUtil.SwapSpriteFromFile(speechBubImg, enemy.DialogBubble, monsterDialogueID);
-                Sprite speechBubSpr = speechBubImg.sprite;
-                sbTextMan.SetOffset(speechBubSpr.border.x, -speechBubSpr.border.w);
-
-                bool reversedX = enemy.sprite.xscale < 0,
-                     reversedY = enemy.sprite.yscale < 0;
-                speechBub.GetComponent<RectTransform>().anchorMin = speechBub.GetComponent<RectTransform>().anchorMax = new Vector2(0.5f, 0.5f);
-                speechBub.GetComponent<RectTransform>().anchoredPosition = new Vector3((enemy.DialogBubblePosition.x + enemy.offsets[1].x) * (reversedX ? -1 : 1),
-                                                                                       (enemy.DialogBubblePosition.y + enemy.offsets[1].y) * (reversedY ? -1 : 1));
-                if (enemy.Voice != "")
-                    sbTextMan.letterSound = enemy.Voice;
+                readyToNextLine[i] = monsterDialogues[monsterDialogueID] == null || !monsterDialogues[monsterDialogueID].HasNext();
             } catch (Exception e) {
                 throw new CYFException("Error while updating monster #" + i + ": \n" + e.Message + "\n\n" + e.StackTrace);
             }
@@ -687,7 +625,6 @@ public class UIController : MonoBehaviour {
                 continue;
             }
 
-
             readyToNextLine[monsterDialogueEnemyID[i]] = true;
         }
 
@@ -697,94 +634,59 @@ public class UIController : MonoBehaviour {
     }
 
     public void DoNextMonsterDialogue(bool singleLineAll = false, int index = -1) {
-        bool complete = true, foiled = false;
+        bool someTextsHaveLinesLeft = false;
         if (index != -1) {
             if (monsterDialogues[index] == null)
                 return;
 
             if (monsterDialogues[index].HasNext()) {
-                FileInfo fi = new FileInfo(FileLoader.PathToDefaultFile("Sprites/" + encounter.EnabledEnemies[index].DialogBubble + ".png"));
-                if (!fi.Exists)
-                    fi = new FileInfo(FileLoader.PathToModFile("Sprites/" + encounter.EnabledEnemies[index].DialogBubble + ".png"));
-                if (!fi.Exists)
-                    UnitaleUtil.Warn("The bubble " + encounter.EnabledEnemies[index].DialogBubble + ".png doesn't exist.");
-                else {
-                    Sprite speechBubSpr = SpriteUtil.FromFile(encounter.EnabledEnemies[index].DialogBubble + ".png");
-                    monsterDialogues[index].SetOffset(speechBubSpr.border.x, -speechBubSpr.border.w);
-                }
+                encounter.EnabledEnemies[index].UpdateBubble(index);
                 monsterDialogues[index].NextLineText();
-                complete = false;
+                someTextsHaveLinesLeft = true;
             } else {
                 monsterDialogues[index].DestroyChars();
-                Destroy(monsterDialogues[index].gameObject);
-                foreach (TextManager textManager in monsterDialogues)
-                    if (textManager != null)
-                        complete = false;
+                encounter.EnabledEnemies[index].HideBubble();
+                foreach (LuaTextManager textManager in monsterDialogues)
+                    if (textManager.HasNext())
+                        someTextsHaveLinesLeft = true;
             }
-        } else if (!singleLineAll)
+        } else if (!singleLineAll) {
             for (int i = 0; i < monsterDialogues.Length; i++) {
                 if (monsterDialogues[i] == null)
                     continue;
 
                 if (monsterDialogues[i].AllLinesComplete() && monsterDialogues[i].LineCount() != 0 || (!monsterDialogues[i].HasNext() && readyToNextLine[i])) {
                     monsterDialogues[i].DestroyChars();
-                    Destroy(monsterDialogues[i].gameObject); // this text manager's game object is a dialog bubble and should be destroyed at this point
+                    encounter.EnabledEnemies[i].HideBubble();
                     continue;
                 }
-                complete = false;
 
-                // part that autoskips text if [nextthisnow] or [finished] is introduced
+                // Part that autoskips text if [nextthisnow] or [finished] is introduced
                 if (monsterDialogues[i].CanAutoSkipThis() || monsterDialogues[i].CanAutoSkip()) {
                     if (monsterDialogues[i].HasNext()) {
-                        FileInfo fi = new FileInfo(FileLoader.PathToDefaultFile("Sprites/" + encounter.EnabledEnemies[i].DialogBubble + ".png"));
-                        if (!fi.Exists)
-                            fi = new FileInfo(FileLoader.PathToModFile("Sprites/" + encounter.EnabledEnemies[i].DialogBubble + ".png"));
-                        if (!fi.Exists) {
-                            Debug.LogError("The bubble " + encounter.EnabledEnemies[i].DialogBubble + ".png doesn't exist.");
-                        } else {
-                            Sprite speechBubSpr = SpriteUtil.FromFile(encounter.EnabledEnemies[i].DialogBubble + ".png");
-                            monsterDialogues[i].SetOffset(speechBubSpr.border.x, -speechBubSpr.border.w);
-                        }
+                        encounter.EnabledEnemies[i].UpdateBubble(i);
                         monsterDialogues[i].NextLineText();
                     } else {
                         monsterDialogues[i].DestroyChars();
-                        Destroy(monsterDialogues[i].gameObject); // code duplication? in my source? it's more likely than you think
-                        if (!foiled)
-                            complete = true;
+                        encounter.EnabledEnemies[i].HideBubble();
                         continue;
                     }
                 } else if (readyToNextLine[monsterDialogueEnemyID[i]]) {
-                    FileInfo fi = new FileInfo(FileLoader.PathToDefaultFile("Sprites/" + encounter.EnabledEnemies[i].DialogBubble + ".png"));
-                    if (!fi.Exists)
-                        fi = new FileInfo(FileLoader.PathToModFile("Sprites/" + encounter.EnabledEnemies[i].DialogBubble + ".png"));
-                    if (!fi.Exists) {
-                        Debug.LogError("The bubble " + encounter.EnabledEnemies[i].DialogBubble + ".png doesn't exist.");
-                    } else {
-                        Sprite speechBubSpr = SpriteUtil.FromFile(encounter.EnabledEnemies[i].DialogBubble + ".png");
-                        monsterDialogues[i].SetOffset(speechBubSpr.border.x, -speechBubSpr.border.w);
-                    }
+                    encounter.EnabledEnemies[i].UpdateBubble(i);
                     monsterDialogues[i].NextLineText();
                 }
-                foiled = true;
+                someTextsHaveLinesLeft = true;
             }
-        if (!complete)
-            UpdateBubble();
-        // looping through the same list three times? there's a reason this class is the most in need of redoing
-        // either way, after doing everything required, check which text manager has the longest text now and mute all others
-        int longestTextLen = 0;
-        int longestTextMgrIndex = -1;
-        for (int i = 0; i < monsterDialogues.Length; i++) {
-            if (monsterDialogues[i] == null) continue;
-            monsterDialogues[i].SetMute(true);
-            if (monsterDialogues[i].AllLinesComplete() || monsterDialogues[i].letterReferences.Length <= longestTextLen) continue;
-            longestTextLen      = monsterDialogues[i].letterReferences.Length - monsterDialogues[i].currentReferenceCharacter;
-            longestTextMgrIndex = i;
-        }
+        } else
+            for (int i = 0; i < monsterDialogues.Length; i++) {
+                monsterDialogues[i].DestroyChars();
+                encounter.EnabledEnemies[i].HideBubble();
+            }
 
-        if (longestTextMgrIndex > -1)
-            monsterDialogues[longestTextMgrIndex].SetMute(false);
+        if (someTextsHaveLinesLeft)
+            UpdateNewlineTextState();
 
-        if (!complete) return; // break if we're not done with all text
+        if (someTextsHaveLinesLeft) return; // break if we're not done with all text
         if (encounter.EnabledEnemies.Length <= 0) return;
         encounter.CallOnSelfOrChildren("EnemyDialogueEnding");
         if (state == "ENEMYDIALOGUE")
@@ -832,15 +734,14 @@ public class UIController : MonoBehaviour {
         int maxWidth = (int)initialHealthPos.x;
         foreach (LifeBarController lbc in arenaParent.GetComponentsInChildren<LifeBarController>())
             Destroy(lbc.gameObject);
-        for (int i = page * 2; i <= page * 2 + 1 && i < encounter.EnabledEnemies.Length; i++) {
-            int mNameWidth = (int)UnitaleUtil.CalcTextWidth(mainTextManager) + 50;
-            if (mNameWidth > maxWidth)
-                maxWidth = mNameWidth;
-        }
+        int mNameWidth = (int)UnitaleUtil.CalcTextWidth(mainTextManager) + 50;
+        if (mNameWidth > maxWidth)
+            maxWidth = mNameWidth;
         for (int i = page * 2; i <= page * 2 + 1 && i < encounter.EnabledEnemies.Length; i++) {
             LifeBarController lifeBar = LifeBarController.Create(0, 0, 90);
             lifeBar.transform.SetParent(mainTextManager.transform);
             lifeBar.transform.SetAsFirstSibling();
+            lifeBar.background.SetAnchor(0.5f, 0.5f);
             lifeBar.background.MoveTo(maxWidth, initialHealthPos.y - (i - page * 2) * mainTextManager.Charset.LineSpacing);
             lifeBar.SetFillColor(Color.green);
             float hpDivide = encounter.EnabledEnemies[i].HP / (float)encounter.EnabledEnemies[i].MaxHP;
@@ -863,10 +764,8 @@ public class UIController : MonoBehaviour {
 
                     if (!mainTextManager.AllLinesComplete() && mainTextManager.LineComplete())
                         mainTextManager.NextLineText();
-                    else if (mainTextManager.AllLinesComplete() && mainTextManager.LineCount() != 0) {
-                        mainTextManager.DestroyChars();
+                    else if (mainTextManager.AllLinesComplete() && mainTextManager.LineCount() != 0)
                         SwitchState(stateAfterDialogs);
-                    }
                     break;
 
                 case "ACTIONSELECT":
@@ -1337,11 +1236,14 @@ public class UIController : MonoBehaviour {
         messages = new Dictionary<int, string[]>();
         // reset GlobalControls' frame timer
         GlobalControls.frame = 0;
+        arenaParent = GameObject.Find("arena_border_outer");
 
-        mainTextManager = GameObject.Find("TextManager").GetComponent<TextManager>();
+        mainTextManager = GameObject.Find("arena").GetComponentInChildren<LuaTextManager>();
+        mainTextManager.HideBubble();
         mainTextManager.SetEffect(new TwitchEffect(mainTextManager));
         mainTextManager.ResetFont();
         mainTextManager.SetCaller(EnemyEncounter.script);
+        mainTextManager.SetText(DynValue.NewString(""));
         encounter = FindObjectOfType<EnemyEncounter>();
 
         fightButton = GameObject.Find("FightBt").GetComponent<Image>();
@@ -1568,10 +1470,8 @@ public class UIController : MonoBehaviour {
             if (mainTextManager.CanAutoSkipAll() || (mainTextManager.CanAutoSkipThis() && mainTextManager.LineComplete()))
                 if (mainTextManager.HasNext())
                     mainTextManager.NextLineText();
-                else {
-                    mainTextManager.DestroyChars();
+                else
                     SwitchState(stateAfterDialogs);
-                }
 
         if (state == "ENEMYDIALOGUE") {
             if (monsterDialogues.All(mgr => mgr.CanAutoSkipThis())) DoNextMonsterDialogue();
@@ -1598,14 +1498,15 @@ public class UIController : MonoBehaviour {
         else if (InputUtil.Pressed(GlobalControls.input.Confirm))
             SwitchState("DONE");
 
-        if ((state == "ATTACKING" || needOnDeath) && fightUI.Finished()) {
+        if (state == "ATTACKING" && fightUI.Finished() || needOnDeath) {
             bool noOnDeath = true;
-            onDeathSwitch = true;
             bool playSound = true;
             foreach (EnemyController enemyController in encounter.EnabledEnemies) {
                 if (enemyController.HP > 0 || enemyController.Unkillable) continue;
                 // fightUI.disableImmediate();
+                onDeathSwitch = true;
                 if (UnitaleUtil.TryCall(enemyController.script, "OnDeath")) continue;
+                onDeathSwitch = false;
                 noOnDeath = false;
                 enemyController.DoKill(playSound);
                 playSound = false;
@@ -1616,7 +1517,6 @@ public class UIController : MonoBehaviour {
                 //    checkAndTriggerVictory();
             }
 
-            onDeathSwitch = false;
             if (state == "ATTACKING" && fightUI.Finished()) {
                 if (lastNewState != "UNUSED") {
                     SwitchState(lastNewState);
