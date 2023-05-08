@@ -94,6 +94,30 @@ public static class UnitaleUtil {
         ScreenResolution.wideFullscreen = true;
     }
 
+    /// <summary>
+    /// Handles most CYF errors related to script execution
+    /// </summary>
+    /// <param name="scriptname">Name of the script, used for the error message</param>
+    /// <param name="function">Name of the function, used for the error message</param>
+    /// <param name="e">Exception to handle</param>
+    public static void HandleError(string scriptname, string function, Exception e) {
+        if (e as InterpreterException != null) {
+            InterpreterException ie = e as InterpreterException;
+            DisplayLuaError(scriptname, ie.DecoratedMessage == null ? ie.Message : FormatErrorSource(ie.DecoratedMessage, ie.Message) + ie.Message, ie.DoNotDecorateMessage);
+        } else if (GlobalControls.retroMode)
+            return;
+        else if (e.GetType().ToString() == "System.IndexOutOfRangeException" && e.StackTrace.Contains("at MoonSharp.Interpreter.DataStructs.FastStack`1[MoonSharp.Interpreter.DynValue].Push"))
+            DisplayLuaError(scriptname + ", calling the function " + function, "<b>Possible infinite loop</b>\n\nThis is a " + e.GetType() + " error."
+                                                                             + "\n\nYou almost definitely have an infinite loop in your code. A function tried to call itself infinitely. It could be a normal function or a metatable function."
+                                                                             + "\n\nFull stracktrace (see CYF output log at <b>" + Application.persistentDataPath + "/output_log.txt</b>):"
+                                                                             + "\n" + e.StackTrace);
+        else
+            DisplayLuaError(scriptname + ", calling the function " + function, "This is a " + e.GetType() + " error. Contact a dev and show them this screen, this must be an engine-side error."
+                                                                             + "\n\n" + e.Message
+                                                                             + "\n\nFull stracktrace (see CYF output log at <b>" + Application.persistentDataPath + "/output_log.txt</b>):"
+                                                                             + "\n" + e.StackTrace + "\n");
+    }
+
     public static string FormatErrorSource(string DecoratedMessage, string message) {
         string source = DecoratedMessage.Substring(0, DecoratedMessage.Length - message.Length);
         Regex validator = new Regex(@"\(\d+,\d+(-[\d,]+)?\)"); //Finds `(13,9-16)` or `(13,9-14,10)` or `(20,0)`
@@ -186,8 +210,7 @@ public static class UnitaleUtil {
                     break;
                 case '\r':
                 case '\n':
-                    if (totalMaxWidth < totalWidthSpaceTest - hSpacing)
-                        totalMaxWidth = totalWidthSpaceTest - hSpacing;
+                    totalMaxWidth = Mathf.Max(totalMaxWidth, totalWidthSpaceTest - hSpacing);
                     totalWidth = 0;
                     totalWidthSpaceTest = 0;
                     break;
@@ -201,9 +224,8 @@ public static class UnitaleUtil {
                     break;
             }
         }
-        if (totalMaxWidth < totalWidthSpaceTest - hSpacing)
-            totalMaxWidth = totalWidthSpaceTest - hSpacing;
-        return totalMaxWidth + (getLastSpace ? hSpacing : 0);
+        totalMaxWidth = Mathf.Max(totalMaxWidth, totalWidthSpaceTest - hSpacing);
+        return Mathf.Max(totalMaxWidth + (getLastSpace ? hSpacing : 0), 0);
     }
 
     public static float CalcTextHeight(TextManager txtmgr, int fromLetter = -1, int toLetter = -1) {
@@ -214,17 +236,13 @@ public static class UnitaleUtil {
         if (fromLetter > toLetter || fromLetter < 0 || toLetter > txtmgr.textQueue[txtmgr.currentLine].Text.Length) return -1;
         if (fromLetter == toLetter)                                                                                 return 0;
 
-        for (int i = 0; i < txtmgr.letterReferences.Count; i++) {
-            Image im = txtmgr.letterReferences[i];
-            int index = txtmgr.letterIndexes[im];
-
-            if (index < fromLetter || index > toLetter) continue;
-            if (txtmgr.letterPositions[i].y < minY)
-                minY = txtmgr.letterPositions[i].y;
-            if (txtmgr.letterPositions[i].y + txtmgr.Charset.Letters[txtmgr.textQueue[txtmgr.currentLine].Text[index]].textureRect.size.y > maxY)
-                maxY = txtmgr.letterPositions[i].y + txtmgr.Charset.Letters[txtmgr.textQueue[txtmgr.currentLine].Text[index]].textureRect.size.y;
+        for (int i = 0; i < txtmgr.letters.Count; i++) {
+            TextManager.LetterData l = txtmgr.letters[i];
+            if (l.index < fromLetter || l.index > toLetter) continue;
+            minY = Mathf.Min(minY, l.position.y);
+            maxY = Mathf.Max(maxY, l.position.y + txtmgr.Charset.Letters[txtmgr.textQueue[txtmgr.currentLine].Text[l.index]].textureRect.size.y);
         }
-        return maxY - minY;
+        return Mathf.Max(maxY - minY, 0);
     }
 
     public static DynValue RebuildTableFromString(string text) {
@@ -595,6 +613,7 @@ public static class UnitaleUtil {
     public static Dictionary<string, string> MapCorrespondanceList = new Dictionary<string, string>();
 
     public static void AddKeysToMapCorrespondanceList() {
+        MapCorrespondanceList.Clear();
         MapCorrespondanceList.Add("test", "Snowdin - Big boy map");
         MapCorrespondanceList.Add("test2", "Hotland - Crossroads");
         // MapCorrespondanceList.Add("test3", "The Core - The test map");
@@ -654,12 +673,67 @@ public static class UnitaleUtil {
 
     public static bool TryCall(ScriptWrapper script, string func, DynValue param) { return TryCall(script, func, new[] { param }); }
     public static bool TryCall(ScriptWrapper script, string func, DynValue[] param = null) {
-        try {
-            DynValue sval = script.GetVar(func);
-            if (sval == null || sval.Type == DataType.Nil) return false;
-            script.Call(func, param);
-        } catch (InterpreterException ex) { DisplayLuaError(script.scriptname, FormatErrorSource(ex.DecoratedMessage, ex.Message) + ex.Message); }
-        return true;
+        DynValue sval = script.GetVar(func);
+        script.Call(func, param);
+        return (sval.Type & (DataType.Function | DataType.ClrFunction)) == 0;
+    }
+
+    public static int SelectionChoice(int items, int current, int xMov, int yMov, int rows, int columns, bool verticalRollaround = true) {
+        int pageItems = rows * columns;
+        int pageNumber = Mathf.CeilToInt(items / (float)pageItems);
+        int currentPage = current / pageItems;
+        int currentItem = current % pageItems;
+        int lastPageItemNumber = Math.Mod(items - 1, pageItems) + 1;
+        int xPos = currentItem % columns;
+        int yPos = currentItem / columns;
+
+        xPos += xMov;
+        yPos += yMov;
+
+        // Horizontal movement
+        if (xMov != 0) {
+            // Right bound
+            if (xPos >= columns || (currentPage == pageNumber - 1 && xPos >= lastPageItemNumber - yPos * columns)) {
+                xPos = 0;
+                if (verticalRollaround)
+                    currentPage++;
+            }
+            // Left bound
+            if (xPos < 0) {
+                if (currentPage == 0) xPos = Math.Mod(lastPageItemNumber - yPos * columns - 1, columns);
+                else                  xPos = columns - 1;
+                if (verticalRollaround)
+                    currentPage--;
+            }
+        }
+
+        // Vertical movement
+        // Down bound
+        if (yPos >= rows || (currentPage == pageNumber - 1 && yPos >= Mathf.CeilToInt((lastPageItemNumber - xPos) / (float)columns))) {
+            yPos = 0;
+            if (!verticalRollaround)
+                currentPage++;
+        }
+        // Up bound
+        if (yPos < 0) {
+            if (currentPage == pageNumber - 1) yPos = Mathf.CeilToInt((lastPageItemNumber - xPos) / (float)columns) - 1;
+            else                               yPos = rows - 1;
+            if (!verticalRollaround)
+                currentPage--;
+        }
+
+        // Page underflow
+        while (currentPage < 0)
+            currentPage += pageNumber;
+        // Page overflow
+        while (currentPage >= pageNumber)
+            currentPage -= pageNumber;
+
+        int result = xPos + yPos * columns + currentPage * pageItems;
+        if (result >= items)
+            result = items - 1;
+
+        return result;
     }
 
     public static Transform GetTransform(object o) {
@@ -671,6 +745,8 @@ public static class UnitaleUtil {
         if (pSelf != null) return pSelf.sprite.img.transform;
         LuaCYFObject oSelf = o as LuaCYFObject;
         if (oSelf != null) return oSelf.transform;
+        Transform tsSelf = o as Transform;
+        if (tsSelf != null) return tsSelf;
         return null;
     }
 
@@ -683,6 +759,8 @@ public static class UnitaleUtil {
             return UserData.Create(LuaSpriteController.GetOrCreate(go));
         if (t.GetComponent<LuaProjectile>() != null)
             return UserData.Create(t.GetComponent<LuaProjectile>().ctrl);
+        if (t.GetComponent<LuaTextManager>() != null)
+            return UserData.Create(t.GetComponent<LuaTextManager>());
         for (int i = 0; i < t.childCount; i++) {
             Transform child = t.GetChild(i);
             if (child.GetComponent<LuaTextManager>() != null)
@@ -707,6 +785,11 @@ public static class UnitaleUtil {
         if ((sSelf != null && sSelf.tag == "letter") ^ (sParent != null && sParent.tag == "letter"))
             throw new CYFException("sprite.SetParent(): Cannot be used between letter sprites and other objects.");
 
+        Transform t = GetTransform(p);
+        if (t == null) {
+            DynValue d = p as DynValue;
+            throw new CYFException("SetParent(): Can't set an object of type " + d.GetType().ToString() + " as a parent!");
+        }
         GetTransform(self).SetParent(GetTransform(p));
     }
 }

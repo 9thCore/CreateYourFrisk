@@ -12,7 +12,7 @@ it's w3c valid, at least
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="">
     <meta name="author" content="">
-    <link rel="icon" href="favicon.ico">
+    <link rel="icon" href="../img/icon.png">
 
     <title>CYF Documentation - The Text Object</title>
     <link href="../css/bootstrap.min.css" rel="stylesheet">
@@ -50,7 +50,7 @@ it's w3c valid, at least
             </p>
             <p>
                 <br><span class="function">CreateText(<span class="luatable"><span class="string"></span></span> / <span class="string"></span> text,
-                <span class="luatable"><span class="number"></span>, <span class="number"></span></span> position, <span class="number"></span> textMaxWidth, <span class="string"></span> layer = "BelowPlayer", <span class="number"></span>  bubbleHeight = -1) returns <span class="userdata">textObject</span> [E/M/W]</span>
+                <span class="luatable"><span class="number"></span>, <span class="number"></span></span> position, <span class="number"></span> width, <span class="string"></span> layer = "BelowPlayer", <span class="number"></span>  bubbleHeight = -1) returns <span class="userdata">textObject</span> [E/M/W]</span>
                 This function creates a Text Object and returns it. However, as you can see, a lot of parameters are needed.
                 <Br>Here is what you need to set:
                 <ul>
@@ -61,7 +61,7 @@ it's w3c valid, at least
                     able to use <span class="term">MoveTo</span> to adjust it afterwards.
                     <br>You only need two numbers, like this:
                     <span class="term">{320, 240}</span></li><br>
-                    <li><span class="term">textMaxWidth</span> - You'll always need this! The bubble's width will be 20px larger than the text's
+                    <li><span class="term">width</span> - You'll always need this, as it's the maximum width of the text! The bubble's width will be 20px larger than the text's
                     width. Also, bubbles have a minimum width of 40.<br>Example: <span class="term">150</span></li><br>
                     <li><span class="term">layer</span> - The sprite layer of the Text Object. If it doesn't exist, it returns an error. This argument is
                     optional. If it's not provided, the Text Object will be in the layer <span class="term">BelowPlayer</span> (or <span class="term">Default</span> in the Overworld).
@@ -114,7 +114,7 @@ it's w3c valid, at least
                 </ul>
             </p>
             <p>
-                <br><span class="new function"><span class="boolean"></span> Text.deleteWhenFinished</span>
+                <br><span class="function"><span class="boolean"></span> Text.deleteWhenFinished</span>
                 This value is used to check whether the text object should be removed or not after the text is finished.
                 Its default value is <span class="term">true</span>, meaning the text object will be automatically removed after the end of the text.
                 You can set it to <span class="term">false</span> to automatically hide the text object once its text is complete, which allows you to reuse it later.
@@ -136,7 +136,7 @@ it's w3c valid, at least
                 The absolute y position of the object, measured from the bottom left corner of the screen. This value depends on the object's pivot.
             </p>
             <p>
-                <br><span class="function"><span class="number"></span> Text.textMaxWidth</span>
+                <br><span class="new function"><span class="number"></span> Text.textMaxWidth or Text.width</span>
                 Get or set the maximum width of the text. If the value is lower than 16, it'll be set back to 16.
             </p>
             <p>
@@ -162,7 +162,7 @@ it's w3c valid, at least
                 The 4th value is the alpha (transparency) value of the text.
             </p>
             <p>
-                <br><span class="new function">Text.ResetColor(<span class="boolean"></span> resetAlpha = false)</span>
+                <br><span class="function">Text.ResetColor(<span class="boolean"></span> resetAlpha = false)</span>
                 Resets any previous set of the variable <span class="term">Text.color</span> or <span class="term">Text.color32</span>,
                 resetting the text's default color to the font's default color.<br>
                 This function will not reset the color's <span class="term">alpha</span> if it was set in any way unless
@@ -177,7 +177,7 @@ it's w3c valid, at least
                 Get or set the text's transparency, as an integer between 0 and 255.
             </p>
             <p>
-                <br><span class="new function">Text.ResetAlpha()</span>
+                <br><span class="function">Text.ResetAlpha()</span>
                 Resets the text object's <span class="term">alpha</span> value, whether it was set through <span class="term">Text.alpha</span>,
                 <span class="term">Text.color</span> or <span class="term">Text.color32</span>, resetting the text's default alpha to the font's default alpha.
             </p>
@@ -196,9 +196,14 @@ it's w3c valid, at least
             </p>
             <p>
                 <br><span class="new function"><span class="number"></span> Text.rotation</span>
-                Gets or sets a text object's rotation, in degrees. Will also rotate the text object's b ubble if it has any.
+                Gets or sets a text object's rotation, in degrees. Will also rotate the text object's bubble if it has any.
                 <br><br>The text object will rotate around the bottom left corner of the first letter of the text object.
                 <br><br>It's clamped between 0 and 360, so if you set it to 365, it will become 5.
+            </p>
+            <p>
+                <br><span class="new function"><span class="number"></span> Text.adjustTextDisplay</span>
+                False by default. If set to true, CYF will try to adjust the text's position and scale to prevent jagged lines to appear if the text's scale or position is slightly off.
+                <br><br>Only taken in account if set, otherwise the global value set through the <span class="term">adjusttextdisplay</span> Encounter variable is used.
             </p>
             <p>
                 <br><span class="function"><span class="number"></span> Text.currentLine</span>
@@ -208,10 +213,27 @@ it's w3c valid, at least
             <p>
                 <br><span class="new function"><span class="string"></span> Text.linePrefix</span>
                 This variable will be added at the beginning of each line of text the text object will display.
-                Useful for adding various text commands you want to apply to all lines of text displayed by a given text object.
+                <br><br>Useful for adding various text commands you want to apply to all lines of text displayed by a given text object.
             </p>
             <p>
-                <br><span class="new function"><span class="luatable"><span class="userdata">sprite</span></span> Text.GetLetters()</span>
+                <br><span class="new function"><span class="number"></span> Text.columnNumber</span>
+                Represents the number of columns used by some texts in CYF, such as the ITEM and ACT menu.
+                <br>If this is value is set, you should also consider changing <span class="term">Text.columnShift</span>.
+                <br><br>This value is only ever used by the engine, so setting it to a specific value doesn't prevent you from using the character <span class="term">\t</span> as much as you like.
+                <br>Refer to the entry on <span class="term">Text.columnShift</span> for more informations on the character <span class="term">\t</span>.
+            </p>
+            <p>
+                <br><span class="new function"><span class="number"></span> Text.columnShift</span>
+                Amount of horizontal pixels the letters moves by from its last column (or first character) whenever the character <span class="term">\t</span> is used.
+                <br><br>The <span class="term">\t</span> character is used in-engine for aligning columns of text. It affects the current line of the text and can be used several times on the same line to support more than two columns.
+                <br><br>For example, the following text will result with the following image:
+                <br><div class="code-container"><pre class="brush: lua">* Check \t * Act 1 \t * Act 2 \n
+* Act 3 \t * Act 4 \t * Act 5 \n
+\t \t * Act 6</pre></div>
+                <img src="../img/columns.png" height="140">
+            </p>
+            <p>
+                <br><span class="function"><span class="luatable"><span class="userdata">sprite</span></span> Text.GetLetters()</span>
                 Returns a table containing sprite objects representing every letter to be displayed in the text object's current line of text. Note that even if a text object has not finished typing yet, all characters it will type are still accessible this way.
                 <h4>Letter sprite objects can not have their layer changed, can not run <span class="term">sprite.Mask</span>, and can only be parented to other letter sprites. They cannot be deleted or dusted (using sprite.Dust()) as well.</h4>
                 <br>NOTE: Accessing this table generates the table anew every time. To save on resources, store this table to a local variable before doing any operations on it. Even code such as <span class="term">for i = 1, #text.GetLetters() do</span> is a bad idea.
@@ -248,6 +270,16 @@ end
             </pre></div>
             </p>
             <p>
+                <br><span class="function"><span class="userdata">function</span> Text.OnTextDisplay(<span class="userdata">text</span> text)</span>
+                Every time this text object's letters are created, this function gets called. This function is the best
+                place to manipulate the text object's letters using <span class="term">Text.GetLetters</span>.
+                <br><br>
+                The argument <span class="term">text</span> is the text object itself.
+                <br><br>
+                If this value isn't set and the function <span class="term">OnTextDisplay()</span> exists in the Encounter
+                script, it will call it with the text object as its argument.
+            </p>
+            <p>
                 <br><span class="function">Text.SkipLine()</span>
                 This function skips to the end of the text object's current text, as if using the text command <span class="term">[instant]</span>.<br>
                 If <span class="term">playerskipdocommand</span> is true, this function will behave the same as a player skip.
@@ -270,7 +302,7 @@ end
             <p>
                 <br><span class="function">Text.NextLine()</span>
                 Shows the next line (dialogue) of the text instantly, regardless of if the current one is finished or what progress mode the object has.<br>
-                <span class="new"></span>If you run this function while this is this text object's last line, it will delete the text object if its
+                If you run this function while this is this text object's last line, it will delete the text object if its
                 <span class="term">Text.deleteWhenFinished</span> variable is set to true, othrwise it will deactive it until further use.
             </p>
             <p>
@@ -282,7 +314,7 @@ end
                 Sets the number of frames to wait before automatically going to the next line of text.<br><i>Only applies to the "auto" progress mode.</i>
             </p>
             <p>
-                <br><span class="new function">Text.SetAnchor(<span class="number"></span> x, <span class="number"></span> y)</span>
+                <br><span class="function">Text.SetAnchor(<span class="number"></span> x, <span class="number"></span> y)</span>
                 If this text object has a parent set via <span class="term">Text.SetParent</span>, this will control its anchor point
                 (the relative point on the parent sprite that the text object will follow if the parent sprite gets scaled).
                 <br><br>
@@ -311,14 +343,14 @@ end
                 Moves a text object above another text object.<br>They must both be on the same layer.
             </p>
             <p>
-                <br><span class="function"><span class="new"></span>Text.SendToTop()</span>
+                <br><span class="function">Text.SendToTop()</span>
                 Sends this text object to the top of its layer's hierarchy. If a sprite has 5
                 children, for instance, you can use this to rearrange this text object's position internally.
                 However, child text objects will always appear on top of their parents, regardless of this
                 function being called.
             </p>
             <p>
-                <br><span class="function"><span class="new"></span>Text.SendToBottom()</span>
+                <br><span class="function">Text.SendToBottom()</span>
                 Sends this text objct to the bottom of its layer's hierarchy. Similar rules apply as with <span class="term">SendToTop()</span>.
             </p>
             <p>
@@ -393,6 +425,10 @@ end
                 A function that hides the bubble.
             </p>
             <p>
+                <br><span class="new function">Text.Move(<span class="number"></span> x, <span class="number"></span> y)</span>
+                Moves the text object by x pixels horizontally and y pixels vertically from its current position.
+            </p>
+            <p>
                 <br><span class="function">Text.MoveTo(<span class="number"></span> x, <span class="number"></span> y)</span>
                 Moves the text to a new position, relative to the text object's parent's position.
             </p>
@@ -422,14 +458,14 @@ end
             </p>
 
             <p>
-                <span class="function"><span class="new"></span>Text.SetVar(<span class="string"></span> yourVariableName, value)
+                <span class="function">Text.SetVar(<span class="string"></span> yourVariableName, value)
                 <br></span>or <span class="function">Text[<span class="string"> yourVariableName</span>]</span></span>
                 Sets a variable in a text object that you can retrieve with <span class="term">Text.GetVar</span>.<br>
                 Identical to <span class="term">SetVar</span> in projectiles.
             </p>
 
             <p>
-                <span class="function"><span class="new"></span>Text.GetVar(<span class="string"></span> yourVariableName)
+                <span class="function">Text.GetVar(<span class="string"></span> yourVariableName)
                 <br></span>or <span class="function">Text[<span class="string"> yourVariableName</span>] = value</span></span>
                 Gets a variable in a text object that you previously set with <span class="term">Text.SetVar</span>.<br>
                 Identical to <span class="term">GetVar</span> in projectiles.

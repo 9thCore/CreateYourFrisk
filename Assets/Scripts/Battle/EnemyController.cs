@@ -7,7 +7,6 @@ using Random = UnityEngine.Random;
 
 public class EnemyController : MonoBehaviour {
     public GameObject bubbleObject;
-    internal Sprite textBubbleSprite;
 
     protected UIController ui;
 
@@ -278,12 +277,14 @@ public class EnemyController : MonoBehaviour {
 
     public BubbleSideEnum BubbleSide {
         get {
+            if (script.GetVar("bubbleside").Type == DataType.Nil)
+                throw new CYFException("You need to set the value of the variable bubbleside if you want the engine to create a text bubble automatically.\nIts possible values are \"LEFT\", \"RIGHT\", \"UP\", \"DOWN\" or \"NONE\".");
             if (script.GetVar("bubbleside").Type != DataType.String)
-                throw new CYFException("The bubbleside value can only take \"LEFT\", \"RIGHT\", \"UP\", \"DOWN\" or \"NONE\", but its value isn't a string.");
+                throw new CYFException("The bubbleside value can only be \"LEFT\", \"RIGHT\", \"UP\", \"DOWN\" or \"NONE\", but its value isn't a string.");
             string s = script.GetVar("bubbleside").String.ToUpper();
             try {
                 return (BubbleSideEnum)Enum.Parse(typeof(BubbleSideEnum), s);
-            } catch { throw new CYFException("The bubbleside value can only take \"LEFT\", \"RIGHT\", \"UP\", \"DOWN\" or \"NONE\", but its value is \"" + s.ToUpper() + "\"."); }
+            } catch { throw new CYFException("The bubbleside value can only be \"LEFT\", \"RIGHT\", \"UP\", \"DOWN\" or \"NONE\", but its value is \"" + s.ToUpper() + "\"."); }
         }
         set {
             script.SetVar("bubbleside", DynValue.NewString(value.ToString()));
@@ -337,8 +338,6 @@ public class EnemyController : MonoBehaviour {
             if (MaxHP == 0)
                 MaxHP = HP;
 
-            textBubbleSprite = Resources.Load<Sprite>("Sprites/UI/SpeechBubbles/right");
-
             /*if (script.GetVar("canspare") == null) CanSpare = false;
             if (script.GetVar("cancheck") == null) CanCheck = true;*/
         }
@@ -377,6 +376,7 @@ public class EnemyController : MonoBehaviour {
         sbTextMan.HideBubble();
         sbTextMan.SetText(DynValue.NewString(""));
         sbTextMan.GetComponent<RectTransform>().pivot = new Vector2(0, 1);
+        sbTextMan.adjustTextDisplay = true;
 
         bubbleObject = speechBub;
     }
@@ -388,9 +388,6 @@ public class EnemyController : MonoBehaviour {
         Image speechBubImg = bubbleObject.GetComponent<Image>();
         speechBubImg.enabled = !usingAutoBubble;
 
-        bool reversedX = sprite.xscale < 0,
-             reversedY = sprite.yscale < 0;
-
         // Bubble management: can be a normal bubble OR an auto bubble from text objects
         if (!usingAutoBubble) {
             try { SpriteUtil.SwapSpriteFromFile(speechBubImg, DialogBubble, enemyID); }
@@ -400,23 +397,30 @@ public class EnemyController : MonoBehaviour {
             }
             Sprite speechBubSpr = speechBubImg.sprite;
 
-            sbTextMan.MoveTo((int)speechBubSpr.border.x, (int)(-speechBubSpr.border.w - sbTextMan.Charset.LineSpacing));
-            speechBubImg.color = new Color(speechBubImg.color.r, speechBubImg.color.g, speechBubImg.color.b, sbTextMan.letterReferences.Count == 0 ? 0 : 1);
+            float xMov = speechBubSpr.border.x;
+            float yMov = -speechBubSpr.border.w - sbTextMan.Charset.LineSpacing;
+            float angle = sbTextMan.rotation * Mathf.Deg2Rad;
+            sbTextMan.MoveTo((int)(Mathf.Cos(angle) * xMov - Mathf.Sin(angle) * yMov), (int)(Mathf.Sin(angle) * xMov + Mathf.Cos(angle) * yMov));
+            speechBubImg.color = new Color(speechBubImg.color.r, speechBubImg.color.g, speechBubImg.color.b, sbTextMan.letters.Count == 0 ? 0 : 1);
 
             sbTextMan.HideBubble();
         } else {
-            bubbleWidth = (float)BubbleWidth;
-            if (sbTextMan.letterReferences.Count > 0) sbTextMan.ShowBubble(GetReverseBubbleSide(BubbleSide).ToString(), DynValue.NewString("50%"));
-            else                                      sbTextMan.HideBubble();
+            try { bubbleWidth = (float)BubbleWidth; }
+            catch (Exception e) {
+                UnitaleUtil.DisplayLuaError(scriptName + ": Creating a dialogue bubble", e.Message);
+                return;
+            }
+
+            if (sbTextMan.letters.Count > 0) sbTextMan.ShowBubble(GetReverseBubbleSide(BubbleSide).ToString(), DynValue.NewString("50%"));
+            else                             sbTextMan.HideBubble();
             sbTextMan.MoveTo(0, 0);
         }
 
         sbTextMan.textMaxWidth = (int)bubbleWidth;
+        speechBubImg.transform.SetAsLastSibling();
 
-        // TODO improve position setting/remove hardcoding of position setting
-        bubbleObject.GetComponent<RectTransform>().localScale = new Vector2(reversedX ? -1 : 1, reversedY ? -1 : 1);
-        bubbleObject.GetComponent<RectTransform>().anchoredPosition = new Vector2((DialogBubblePosition.x + offsets[1].x) * (reversedX ? -1 : 1),
-                                                                                  (DialogBubblePosition.y + offsets[1].y) * (reversedY ? -1 : 1));
+        bubbleObject.GetComponent<RectTransform>().anchoredPosition = DialogBubblePosition + offsets[1];
+        sbTextMan.Move(0, 0); // Used to even out the text object's position so it's only using integers
 
         if (Voice != "")
             sbTextMan.letterSound = Voice;

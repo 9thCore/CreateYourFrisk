@@ -12,7 +12,7 @@ it's w3c valid, at least
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="">
     <meta name="author" content="">
-    <link rel="icon" href="favicon.ico">
+    <link rel="icon" href="../img/icon.png">
 
     <title>CYF Documentation - Special Variables</title>
     <link href="../css/bootstrap.min.css" rel="stylesheet">
@@ -50,7 +50,7 @@ it's w3c valid, at least
             </p>
 
             <p>
-                <br><span class="function new"><span class="CYF"></span> <span class="boolean"></span> isRetro [E/M/W]</span>
+                <br><span class="function"><span class="CYF"></span> <span class="boolean"></span> isRetro [E/M/W]</span>
                 A value which is true whenever CYF's retrocompatibility mode is active and false when it isn't. Test it with
                 <span class="term">if not isRetro then</span> or <span class="term">if isRetro then</span>.
             </p>
@@ -83,7 +83,7 @@ it's w3c valid, at least
             </p>
 
             <p>
-                <br><span class="function"><span class="new"></span><span class="CYF"></span> <span class="number"></span> LTSversion [E/M/W]</span>
+                <br><span class="function"><span class="CYF"></span> <span class="number"></span> LTSversion [E/M/W]</span>
                 Returns a different number based on the LTS version of CYF you are using.<br><br>
                 You can compare this number to your own values to make sure the right version of CYF is used to play your mod, if needed.<br><br>
                 You may also want to check if this value exists at all in case older versions of CYF are used to play your mod.
@@ -176,9 +176,12 @@ deathtext = {
             if <span class="term">revive</span> is not set.</p>
             <br><p><span class="CYF"></span> <span class="luatable"><span class="userdata">script</span></span> <span class="term">Wave</span> - A table
             returning the current wave scripts used. Returns a table with a length of 0 if not in the state DEFENDING.</p>
-            <br><p><span class="new"></span><span class="CYF"></span> <span class="boolean"></span> <span class="term">noscalerotationbug</span> - If this
+            <br><p><span class="CYF"></span> <span class="boolean"></span> <span class="term">noscalerotationbug</span> - If this
             variable is set to true, the rotation of any child sprite with a rotated parent will no longer be reset after either changing its sprite in any
             way or scaling it.</p>
+            <br><p><span class="new"></span><span class="boolean"></span> <span class="term">adjusttextdisplay</span> - False if not set. If set to true,
+            CYF will try to adjust the text's position and scale to prevent jagged lines to appear if the text's scale or position is slightly off.
+            <br>Can be overridden for each text object by setting their <span class="term">adjustTextDisplay</span> value.</p>
 
             <hr>
             <h4>Monster script variables</h4>
@@ -246,7 +249,7 @@ check = "Serving Size: 1 Monster\nNot monitored by the USDA"</pre>
                 Positioning of the bubbles is done automatically.
                 <br>
                 <span class="new"></span>This value can also be nil, which means the monster's text will use an automatically sized bubble much like text
-                objects do. See <span class="term">bubbleside</span> and <span class="term">bubblewidth</span> below for details.</p>
+                objects do. In which case, you need to set the value of the variables <span class="term">bubbleside</span> and <span class="term">bubblewidth</span>. See their entries below for details.</p>
             <p><span class="new"></span><span class="string"></span> <span class="term">bubbleside</span> - Only useful when
                 <span class="term">dialogbubble</span> is nil. Determines which side the bubble and its tail are on. Can only accept the values
                 <span class="term">RIGHT</span>, <span class="term">LEFT</span>, <span class="term">UP</span>, <span class="term">DOWN</span> and
@@ -260,7 +263,7 @@ check = "Serving Size: 1 Monster\nNot monitored by the USDA"</pre>
                 <span class="term">dialogbubble</span> is not nil. This is the sprite object used for the bubble sprite used for monster dialogues.
                 This object has <span class="term">textobject</span> as child, so moving it will also move that object.</p>
             <p><span class="new"></span><span class="userdata">text</span> <span class="term">textobject</span> - Text object used to display the
-                monster's dialogue.</p>
+                monster's dialogue. Moving it also moves the dialog bubble if dialogbubble is nil.</p>
             <p><span class="CYF"></span> <span class="string"></span> <span class="term">dialogueprefix</span> - A string, appended to the beginning
                 of every monster's dialogue. The default is <span class="term">"[effect:rotate]"</span></p>
             <p><span class="string"></span> <span class="term">name</span> - Monster name. Fairly self-explanatory; shows up in the FIGHT/ACT menus.

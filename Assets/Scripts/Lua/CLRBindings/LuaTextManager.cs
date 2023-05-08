@@ -1,5 +1,4 @@
 ﻿using UnityEngine;
-using UnityEngine.UI;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -20,7 +19,6 @@ public class LuaTextManager : TextManager {
     private int _bubbleHeight = -1;
     private BubbleSide bubbleSide = BubbleSide.NONE;
     [SerializeField] private ProgressMode progress = ProgressMode.AUTO;
-    private Color textColor;
     private float xScale = 1;
     private float yScale = 1;
     private string _linePrefix = "";
@@ -29,6 +27,31 @@ public class LuaTextManager : TextManager {
     [MoonSharpHidden] public bool needFontReset = false;
     [MoonSharpHidden] public bool noAutoLineBreak = false;
     [MoonSharpHidden] public bool isMainTextObject = false;
+    [MoonSharpHidden] public bool noSelfAdvance = false;
+
+    // Whether we correct the text's display (position, scale) to not look jagged
+    private static bool globalAdjustTextPos {
+        get {
+            if (GlobalControls.isInFight)
+                return EnemyEncounter.script.GetVar("adjusttextdisplay").Boolean;
+            return false;
+        }
+    }
+    private bool adjustTextDisplaySet = false;
+    private bool _adjustTextDisplay = false;
+    public bool adjustTextDisplay {
+        get {
+            if (adjustTextDisplaySet)
+                return _adjustTextDisplay;
+            return globalAdjustTextPos;
+        }
+        set {
+            adjustTextDisplaySet = true;
+            _adjustTextDisplay = value;
+            Move(0, 0);
+            Scale(xscale, yscale);
+        }
+    }
 
     public bool isactive {
         get { return !removed && !hidden; }
@@ -54,10 +77,10 @@ public class LuaTextManager : TextManager {
     }
 
     protected override void Awake() {
+        container = transform.parent.gameObject;
         base.Awake();
         if (!UnitaleUtil.IsOverworld && autoSetLayer)
             transform.parent.SetParent(GameObject.Find("TopLayer").transform);
-        container = transform.parent.gameObject;
 
         Transform bubbleTransform = UnitaleUtil.GetChildPerName(container.transform, "BubbleContainer", true);
         if (bubbleTransform != null) {
@@ -76,21 +99,21 @@ public class LuaTextManager : TextManager {
         switch (progress) {
             case ProgressMode.MANUAL: {
                 if (GlobalControls.input.Confirm == UndertaleInput.ButtonState.PRESSED && LineComplete())
-                    Advance();
+                    NextLine();
                 break;
             }
             case ProgressMode.AUTO: {
                 if (LineComplete())
                     if (countFrames == framesWait) {
-                        Advance();
+                        NextLine();
                         countFrames = 0;
                     } else
                         countFrames++;
                 break;
             }
         }
-        if (CanAutoSkipAll() || CanAutoSkipThis())
-            Advance();
+        if ((CanAutoSkipAll() && !noSelfAdvance) || CanAutoSkipThis())
+            NextLine();
         if (CanSkip() && !LineComplete() && GlobalControls.input.Cancel == UndertaleInput.ButtonState.PRESSED)
             DoSkipFromPlayer();
     }
@@ -115,10 +138,12 @@ public class LuaTextManager : TextManager {
     private void ResizeBubble() {
         float effectiveBubbleHeight = bubbleHeight != -1 ? bubbleHeight < 16 ? 40 : bubbleHeight + 24 : UnitaleUtil.CalcTextHeight(this) < 16 ? 40 : UnitaleUtil.CalcTextHeight(this) + 24;
         containerBubble.transform.GetComponent<RectTransform>().sizeDelta = new Vector2(textMaxWidth + 20, effectiveBubbleHeight);                                                      //To set the borders
-        UnitaleUtil.GetChildPerName(containerBubble.transform, "BackHorz").GetComponent<RectTransform>().sizeDelta = new Vector2(textMaxWidth + 20, effectiveBubbleHeight - 20 * 2);    //BackHorz
-        UnitaleUtil.GetChildPerName(containerBubble.transform, "BackVert").GetComponent<RectTransform>().sizeDelta = new Vector2(textMaxWidth - 20, effectiveBubbleHeight);             //BackVert
-        UnitaleUtil.GetChildPerName(containerBubble.transform, "CenterHorz").GetComponent<RectTransform>().sizeDelta = new Vector2(textMaxWidth + 16, effectiveBubbleHeight - 16 * 2);  //CenterHorz
-        UnitaleUtil.GetChildPerName(containerBubble.transform, "CenterVert").GetComponent<RectTransform>().sizeDelta = new Vector2(textMaxWidth - 16, effectiveBubbleHeight - 4);       //CenterVert
+        if (UnitaleUtil.GetChildPerName(containerBubble.transform, "BackHorz")) {
+            UnitaleUtil.GetChildPerName(containerBubble.transform, "BackHorz").GetComponent<RectTransform>().sizeDelta = new Vector2(textMaxWidth + 20, effectiveBubbleHeight - 20 * 2);    //BackHorz
+            UnitaleUtil.GetChildPerName(containerBubble.transform, "BackVert").GetComponent<RectTransform>().sizeDelta = new Vector2(textMaxWidth - 20, effectiveBubbleHeight);             //BackVert
+            UnitaleUtil.GetChildPerName(containerBubble.transform, "CenterHorz").GetComponent<RectTransform>().sizeDelta = new Vector2(textMaxWidth + 16, effectiveBubbleHeight - 16 * 2);  //CenterHorz
+            UnitaleUtil.GetChildPerName(containerBubble.transform, "CenterVert").GetComponent<RectTransform>().sizeDelta = new Vector2(textMaxWidth - 16, effectiveBubbleHeight - 4);       //CenterVert
+        }
         SetTail(bubbleSide.ToString(), bubbleLastVar);
     }
 
@@ -156,38 +181,48 @@ public class LuaTextManager : TextManager {
         }
     }
 
-    public int x {
+    public float x {
         get {
             CheckExists();
-            return Mathf.RoundToInt(container.transform.localPosition.x);
+            return container.transform.localPosition.x;
         }
         set { MoveTo(value, y); }
     }
 
-    public int y {
+    public float y {
         get {
             CheckExists();
-            return Mathf.RoundToInt(container.transform.localPosition.y);
+            return container.transform.localPosition.y;
         }
         set { MoveTo(x, value); }
     }
 
-    public int absx {
+    public float absx {
         get {
             CheckExists();
-            return Mathf.RoundToInt(container.transform.position.x);
+            return container.transform.position.x;
         }
         set { MoveToAbs(value, absy); }
     }
 
-    public int absy {
+    public float absy {
         get {
             CheckExists();
-            return Mathf.RoundToInt(container.transform.position.y);
+            return container.transform.position.y;
         }
         set { MoveToAbs(absx, value); }
     }
 
+    public int width {
+        get {
+            CheckExists();
+            return _textMaxWidth;
+        }
+        set {
+            CheckExists();
+            _textMaxWidth = value < 16 ? 16 : value;
+        }
+    }
     public int textMaxWidth {
         get {
             CheckExists();
@@ -239,7 +274,14 @@ public class LuaTextManager : TextManager {
         xScale = xs;
         yScale = ys;
 
-        container.transform.localScale = new Vector3(xs, ys, 1.0f);
+        container.transform.localScale = new Vector2(xs, ys);
+        if (adjustTextDisplay)
+            PostScaleHandling();
+        else
+            foreach (LetterData l in letters)
+                l.image.GetComponent<RectTransform>().localScale = Vector2.one;
+
+        MoveLetters();
     }
 
     public string layer {
@@ -252,7 +294,7 @@ public class LuaTextManager : TextManager {
         set {
             CheckExists();
             try {
-                container.transform.SetParent(GameObject.Find(value + "Layer").transform);
+                SetParent(GameObject.Find(value + "Layer").transform);
                 foreach (Transform child in container.transform) {
                     MaskImage childmask = child.gameObject.GetComponent<MaskImage>();
                     if (childmask != null)
@@ -295,41 +337,20 @@ public class LuaTextManager : TextManager {
 
     public void ResetColor(bool resetAlpha = false) {
         CheckExists();
-        Color c = fontDefaultColor;
-        if (!resetAlpha) c.a = alpha;
-
-        if (currentColor.r == defaultColor.r && currentColor.g == defaultColor.g && currentColor.b == defaultColor.b)
-            currentColor = c;
-
-        foreach (var i in letterReferences.Where(i => i != null).Where(i => i.color == defaultColor))
-            i.color = c;
-
-        _color = c;
-        defaultColor = c;
-
-        hasColorBeenSet = false;
-        hasAlphaBeenSet = !resetAlpha && hasAlphaBeenSet;
+        if (resetAlpha)
+            ResetAlpha();
+        color = new[] { fontDefaultColor.r, fontDefaultColor.g, fontDefaultColor.b };
+        textColorSet = false;
     }
 
     public void ResetAlpha() {
         CheckExists();
-        Color c = currentColor;
-        c.a = fontDefaultColor.a;
-
-        if (currentColor.a == defaultColor.a)
-            currentColor = c;
-
-        foreach (var i in letterReferences.Where(i => i.color == defaultColor))
-            i.color = c;
-
-        _color.a = c.a;
-        defaultColor = c;
-        hasAlphaBeenSet = false;
+        alpha = fontDefaultColor.a;
+        textAlphaSet = false;
     }
 
     [MoonSharpHidden] public Color _color = Color.white;
-    [MoonSharpHidden] public bool hasColorBeenSet;
-    [MoonSharpHidden] public bool hasAlphaBeenSet;
+    [MoonSharpHidden] public bool textColorSet, textAlphaSet;
     // The color of the text. It uses an array of three floats between 0 and 1
     public float[] color {
         get {
@@ -340,22 +361,22 @@ public class LuaTextManager : TextManager {
             CheckExists();
             if (value == null)
                 throw new CYFException("text.color can not be set to a nil value.");
-            switch (value.Length) {
-                // If we don't have three or four floats, we throw an error
-                case 3: _color = new Color(value[0], value[1], value[2], alpha);    break;
-                case 4: _color = new Color(value[0], value[1], value[2], value[3]); break;
-                default:
-                    throw new CYFException("You need 3 or 4 numeric values when setting a text's color.");
-            }
+            if (value.Length < 3 || value.Length > 4)
+                throw new CYFException("You need 3 or 4 numeric values when setting a text's color.");
 
-            hasColorBeenSet = true;
-            hasAlphaBeenSet = hasAlphaBeenSet || value.Length == 4;
+            _color.r = value[0];
+            _color.g = value[1];
+            _color.b = value[2];
+            if (value.Length == 4)
+                alpha = value[3];
 
-            foreach (var i in letterReferences.Where(i => i.color == defaultColor))
-                i.color = _color;
+            textColorSet = true;
 
-            if (currentColor.r == defaultColor.r && currentColor.g == defaultColor.g && currentColor.b == defaultColor.b)
-                currentColor = _color;
+            foreach (LetterData l in letters.Where(i => !i.commandColorSet))
+                l.image.color = new Color(_color.r, _color.g, _color.b, l.image.color.a);
+
+            if (!commandColorSet)
+                commandColor = _color;
             defaultColor = _color;
         }
     }
@@ -371,13 +392,9 @@ public class LuaTextManager : TextManager {
             CheckExists();
             if (value == null)
                 throw new CYFException("text.color32 can not be set to a nil value.");
-            switch (value.Length) {
-                // If we don't have three or four floats, we throw an error
-                case 3: color = new[] { value[0] / 255, value[1] / 255, value[2] / 255, alpha };          break;
-                case 4: color = new[] { value[0] / 255, value[1] / 255, value[2] / 255, value[3] / 255 }; break;
-                default:
-                    throw new CYFException("You need 3 or 4 numeric values when setting a text's color.");
-            }
+            if (value.Length < 3 || value.Length > 4)
+                throw new CYFException("You need 3 or 4 numeric values when setting a text's color.");
+            color = value.Select(v => v / 255).ToArray();
         }
     }
 
@@ -389,8 +406,15 @@ public class LuaTextManager : TextManager {
         }
         set {
             CheckExists();
-            color = new[] { _color.r, _color.g, _color.b, Mathf.Clamp01(value) };
-            hasAlphaBeenSet = true;
+            _color.a = Mathf.Clamp01(value);
+            textAlphaSet = true;
+
+            foreach (LetterData l in letters.Where(i => !i.commandAlphaSet))
+                l.image.color = new Color(l.image.color.r, l.image.color.g, l.image.color.b, _color.a);
+
+            if (!commandAlphaSet)
+                commandColor.a = _color.a;
+            defaultColor.a = _color.a;
         }
     }
 
@@ -418,18 +442,30 @@ public class LuaTextManager : TextManager {
         }
     }
 
+    private DynValue _OnTextDisplay = DynValue.Nil;
+    public DynValue OnTextDisplay {
+        get { return _OnTextDisplay; }
+        set {
+            if ((value.Type & (DataType.Nil | DataType.Function | DataType.ClrFunction)) == 0)
+                throw new CYFException("Text.OnTextDisplay: This variable has to be a function!");
+            if (value.Type == DataType.Function && value.Function.OwnerScript != caller.script)
+                throw new CYFException("Text.OnTextDisplay: You can only use a function created in the same script as the text object!");
+            _OnTextDisplay = value;
+        }
+    }
+
     public DynValue GetLetters() {
         CheckExists();
         if (lateStartWaiting)
             throw new CYFException("You cannot fetch a text object's letters on the first frame it was created, unless you use the [instant] command at the beginning of its line.");
         Table table = new Table(null);
         int key = 0;
-        foreach (Image im in letterReferences) {
+        foreach (LetterData d in letters) {
             key++;
-            LuaSpriteController letter = LuaSpriteController.GetOrCreate(im.gameObject);
+            LuaSpriteController letter = LuaSpriteController.GetOrCreate(d.image.gameObject);
             letter.tag = "letter";
-            letter.spritename = textQueue[currentLine].Text[letterIndexes[im]].ToString();
-            letter.img.GetComponent<Letter>().characterNumber = letterIndexes[im];
+            letter.spritename = textQueue[currentLine].Text[d.index].ToString();
+            letter.img.GetComponent<Letter>().characterNumber = d.index;
             table.Set(key, UserData.Create(letter, LuaSpriteController.data));
         }
 
@@ -474,7 +510,14 @@ public class LuaTextManager : TextManager {
             ResizeBubble();
     }
 
-    public void SpawnText() { StartCoroutine(LateStartSetText(false)); }
+    protected override void SpawnText() {
+        base.SpawnText();
+        if ((OnTextDisplay.Type & (DataType.Function | DataType.ClrFunction)) != 0)
+            caller.Call(OnTextDisplay, "OnTextDisplay", UserData.Create(this));
+        else if (GlobalControls.isInFight && (EnemyEncounter.script.script.Globals.Get("OnTextDisplay").Type & (DataType.Function | DataType.ClrFunction)) != 0)
+            EnemyEncounter.script.Call("OnTextDisplay", UserData.Create(this));
+    }
+
     [MoonSharpHidden] public void LateStart() { StartCoroutine(LateStartSetText()); }
 
     private IEnumerator LateStartSetText(bool waitUntilEndOfFrame = true) {
@@ -484,8 +527,6 @@ public class LuaTextManager : TextManager {
         if (!isactive || !lateStartWaiting)
             yield break;
 
-        letterSound = defaultVoice ?? default_charset.SoundName;
-
         if (linePrefix != "")
             foreach (TextMessage tm in textQueue)
                 tm.Text = linePrefix + tm.Text;
@@ -493,10 +534,9 @@ public class LuaTextManager : TextManager {
         // Only allow inline text commands and letter sounds on the second frame
         lateStartWaiting = false;
 
-        currentLine = -1;
-        Advance();
+        ShowLine(0);
         if (bubble)
-            ResizeBubble();
+            UpdateBubble();
     }
 
     public void AddText(DynValue text) {
@@ -526,24 +566,20 @@ public class LuaTextManager : TextManager {
         defaultVoice = voiceName == "none" ? null : voiceName;
     }
 
-    public void SetFont(string fontName, bool firstTime = false) {
+    public void SetFont(string fontName) {
         if (fontName == null)
             throw new CYFException("Text.SetFont: The first argument (the font name) is nil.\n\nSee the documentation for proper usage.");
         CheckExists();
         UnderFont uf = SpriteFontRegistry.Get(fontName);
         if (uf == null)
             throw new CYFException("The font \"" + fontName + "\" doesn't exist.\nYou should check if you made a typo, or if the font really is in your mod.");
-        SetFont(uf, firstTime);
-        if (!firstTime)
-            default_charset = uf;
+        SetFont(uf);
         if (bubble)
             UpdateBubble();
     }
 
     [MoonSharpHidden] public void UpdateBubble() {
         containerBubble.GetComponent<RectTransform>().localPosition = new Vector2(-12, 24);
-        // GetComponent<RectTransform>().localPosition = new Vector2(0, 16);
-        GetComponent<RectTransform>().localPosition = new Vector2(0, 0);
         ResizeBubble();
     }
 
@@ -638,14 +674,6 @@ public class LuaTextManager : TextManager {
             base.SkipLine();
     }
 
-    private void Advance() {
-        NextLine();
-        if (caller == null) return;
-        if (caller.script.Globals["OnTextAdvance"] == null || caller.script.Globals.Get("OnTextAdvance") == null) return;
-        try {caller.script.Call(caller.script.Globals["OnTextAdvance"], this, removed); }
-        catch (ScriptRuntimeException ex) { UnitaleUtil.DisplayLuaError(caller.scriptname, UnitaleUtil.FormatErrorSource(ex.DecoratedMessage, ex.Message) + ex.Message, ex.DoNotDecorateMessage); }
-    }
-
     public void NextLine() {
         CheckExists();
         if (AllLinesComplete() || currentLine + 1 == LineCount()) {
@@ -662,6 +690,21 @@ public class LuaTextManager : TextManager {
         }
     }
 
+    private void PostScaleHandling() {
+        if (xscale == 0 || yscale == 0)
+            return;
+        foreach (LetterData l in letters) {
+            RectTransform r = l.image.GetComponent<RectTransform>();
+            float newXSize = r.rect.width * xscale,
+                  newYSize = r.rect.height * yscale,
+                  chosenX = newXSize % 1 == 0.5 ? newXSize : Mathf.Round(newXSize),
+                  chosenY = newYSize % 1 == 0.5 ? newYSize : Mathf.Round(newYSize),
+                  xLocalScale = chosenX / newXSize,
+                  yLocalScale = chosenY / newYSize;
+            r.localScale = new Vector2(xLocalScale, yLocalScale);
+        }
+    }
+
     // Shortcut to `SetAutoWaitTimeBetweenTexts`
     public void SetWaitTime(int time) { SetAutoWaitTimeBetweenTexts(time); }
 
@@ -670,14 +713,18 @@ public class LuaTextManager : TextManager {
         framesWait = time;
     }
 
-    public void MoveTo(int newX, int newY) {
-        CheckExists();
-        container.transform.localPosition = new Vector3(newX, newY, container.transform.localPosition.z);
+    public override void Move(float newX, float newY) {
+        MoveToAbs(container.transform.position.x + newX, container.transform.position.y + newY);
     }
 
-    public void MoveToAbs(int newX, int newY) {
+    public override void MoveTo(float newX, float newY) {
+        MoveToAbs(container.transform.parent.position.x + newX, container.transform.parent.position.y + newY);
+    }
+
+    public override void MoveToAbs(float newX, float newY) {
         CheckExists();
-        container.transform.position = new Vector3(newX, newY, container.transform.position.z);
+        container.transform.position = adjustTextDisplay ? new Vector3(Mathf.Round(newX), Mathf.Round(newY), transform.position.z)
+                                                         : new Vector3(newX, newY, transform.position.z);
     }
 
     public void SetAnchor(float newX, float newY) {
@@ -718,9 +765,11 @@ public class LuaTextManager : TextManager {
     // Children stuff //
     ////////////////////
 
+    #pragma warning disable 108,114
     public string name {
         get { return container.name; }
     }
+    #pragma warning restore 108,114
 
     public int childIndex {
         get { return container.transform.GetSiblingIndex() + 1; }
@@ -736,6 +785,10 @@ public class LuaTextManager : TextManager {
 
     public void SetParent(object parent) {
         CheckExists();
+
+        Transform t = UnitaleUtil.GetTransform(parent);
+        if (t == null)
+            return;
         UnitaleUtil.SetObjectParent(this, parent);
 
         LuaSpriteController sParent = parent as LuaSpriteController;

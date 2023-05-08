@@ -56,7 +56,8 @@ const tabs = [
     "",
 
     "Dialog Bubble Names",
-    "Key List"
+    "Key List",
+    "Item List"
 ];
 
 // Links for tabs which have one
@@ -109,10 +110,11 @@ const links = new Map([
     ["The Map Overworld Object", "overworld-object-map.html"],
 
     ["Dialog Bubble Names", "media/dialogoptions.png"],
-    ["Key List", "api-keys.html"]
+    ["Key List", "api-keys.html"],
+    ["Item List", "item-list.html"]
 ]);
 
-// These pages are notr in the pages folder of the docs
+// These pages are not in the pages folder of the docs
 const pageIsInRoot = [ "Welcome", "Dialog Bubble Names" ];
 
 // Tabs at which these categories start
@@ -141,19 +143,18 @@ const categoriesEnd = new Map([
 // Used to set apart categories with new elements in them
 const isNew = [
     "Special Variables", "Text Commands", "Game Events",
-    "The Player Object", "The Text Object", "The Time Object",
-    "The Misc Object", "The Arena Object", "The UI Object",
-    "Misc. Functions", "The Inventory Object", "Projectile Management",
-    "Sprites &amp; Animation", "General Objects" ];
+    "The Text Object", "The Arena Object", "The UI Object",
+    "Projectile Management", "Sprites &amp; Animation",
+    "General Objects", "Item List" ];
 
 // Categories with a <CYF> prefix
-// USed for categories only added during CYF's development
+// Used for categories only added during CYF's development
 const isCYF = [
     "Unity Setup (Optional)", "The NewAudio Object",
     "The Text Object", "The Inventory Object",
     "The Misc Object", "The Discord Object",
     "The UI Object", "The Pixel-Perfect Collision System",
-    "Shaders", "Overworld", "Key List" ];
+    "Shaders", "Overworld", "Key List", "Item List" ];
 
 // Returns the various classes an element should have depending on its category depth,
 // whether it's active and whether it's a header or not

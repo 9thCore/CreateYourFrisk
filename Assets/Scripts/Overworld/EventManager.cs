@@ -694,14 +694,15 @@ end";
             if (threeLines)  selection += 2;
             else             selection += 4;
         }
-        // Position of the soul if selection was 0
-        Vector2 upperLeft = new Vector2(61 + Camera.main.transform.position.x - 320,
-                                        GameObject.Find("letter(Clone)").GetComponent<RectTransform>().position.y + (GameObject.Find("letter(Clone)").GetComponent<RectTransform>().sizeDelta.y / 2) - 1);
-        // Compute the horizontal and vertical shift of the soul
-        int xMv = selection % 2;
-        int yMv = selection / 2;
-        // Move the soul where it should be, hardcoded
-        GameObject.Find("tempHeart").GetComponent<RectTransform>().position = new Vector2(upperLeft.x + xMv * 303, upperLeft.y - yMv * _textManager.Charset.LineSpacing);
+
+        int xMv = selection % _textManager.columnNumber;
+        int yMv = selection / _textManager.columnNumber;
+
+        if (_textManager.letters.Count > 0)
+            GameObject.Find("tempHeart").GetComponent<RectTransform>().position =
+                new Vector3(_textManager.letters[0].image.transform.position.x + xMv * _textManager.columnShift,
+                            _textManager.letters[0].image.transform.position.y - yMv * _textManager.Charset.LineSpacing + 9,
+                            GameObject.Find("tempHeart").GetComponent<RectTransform>().position.z);
     }
 
     /// <summary>
@@ -1202,9 +1203,10 @@ end";
 
         // Main loop of the choice dialogue
         while (true) {
+            int xMov = GlobalControls.input.Right == UndertaleInput.ButtonState.PRESSED ? 1 : GlobalControls.input.Left == UndertaleInput.ButtonState.PRESSED ? -1 : 0;
             // Move the soul in front of the current selected option if one of the Left or Right keys are pressed
-            if (GlobalControls.input.Right == UndertaleInput.ButtonState.PRESSED || GlobalControls.input.Left == UndertaleInput.ButtonState.PRESSED) {
-                actualChoice = (actualChoice + 1) % 2;
+            if (xMov != 0) {
+                actualChoice = UnitaleUtil.SelectionChoice(2, actualChoice, xMov, 0, 1, 2, false);
                 SetPlayerOnSelection(actualChoice, question, !oneLiners[actualChoice]);
             // Confirm the selected option if a Confirm key is pressed
             } else if (GlobalControls.input.Confirm == UndertaleInput.ButtonState.PRESSED)
@@ -1746,13 +1748,13 @@ end";
             txtName.SetTextQueue(new[] { new TextMessage("[noskipatall][charspacing:2]" + playerName, false, true) });
             txtLevel.SetTextQueue(new[] { new TextMessage("[noskipatall][charspacing:2]LV" + playerLevel, false, true) });
             txtTime.SetTextQueue(new[] { new TextMessage("[noskipatall][charspacing:2]" + UnitaleUtil.TimeFormatter(SaveLoad.savedGame.playerTime), false, true) });
-            GameObject.Find("TextManagerTime").transform.localPosition = new Vector3(180f - UnitaleUtil.CalcTextWidth(txtTime), 68, 0f);
+            GameObject.Find("TextManagerTime").GetComponent<TextManager>().MoveTo(180f - UnitaleUtil.CalcTextWidth(txtTime), 68);
             txtMap.SetTextQueue(new[] { new TextMessage("[noskipatall][charspacing:2]" + SaveLoad.savedGame.lastScene, false, true) });
         } else {
             txtName.SetTextQueue(new[] { new TextMessage("[noskipatall][charspacing:2]EMPTY", false, true) });
             txtLevel.SetTextQueue(new[] { new TextMessage("[noskipatall][charspacing:2]LV0", false, true) });
             txtTime.SetTextQueue(new[] { new TextMessage("[noskipatall][charspacing:2]0:00", false, true) });
-            GameObject.Find("TextManagerTime").transform.localPosition = new Vector3(130f, 68, 0f);
+            GameObject.Find("TextManagerTime").GetComponent<TextManager>().MoveTo(130f, 68);
             txtMap.SetTextQueue(new[] { new TextMessage("[noskipatall][charspacing:2]--", false, true) });
         }
         txtSave.SetTextQueue(new[] { new TextMessage("[noskipatall][charspacing:2]Save", false, true) });
@@ -1786,7 +1788,7 @@ end";
                     txtName.SetTextQueue(new[] { new TextMessage("[noskipatall][charspacing:2]" + PlayerCharacter.instance.Name, false, true) });
                     txtLevel.SetTextQueue(new[] { new TextMessage("[noskipatall][charspacing:2]LV" + PlayerCharacter.instance.LV, false, true) });
                     txtTime.SetTextQueue(new[] { new TextMessage("[noskipatall][charspacing:2]" + UnitaleUtil.TimeFormatter(SaveLoad.savedGame.playerTime), false, true) });
-                    GameObject.Find("TextManagerTime").transform.localPosition = new Vector3(180f - UnitaleUtil.CalcTextWidth(txtTime), 68, 0f);
+                    GameObject.Find("TextManagerTime").GetComponent<TextManager>().MoveTo(180f - UnitaleUtil.CalcTextWidth(txtTime), 68);
                     txtMap.SetTextQueue(new[] { new TextMessage("[noskipatall][charspacing:2]" + SaveLoad.savedGame.lastScene, false, true) });
                     txtSave.SetTextQueue(new[] { new TextMessage("[noskipatall][charspacing:2]File saved.", false, true) });
                     txtReturn.SetTextQueue(new[] { new TextMessage("[noskipatall][charspacing:2]", false, true) });

@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using MoonSharp.Interpreter;
 using UnityEngine;
@@ -29,7 +28,7 @@ public class UIController : MonoBehaviour {
     public Actions action = Actions.FIGHT;      // Current action chosen when entering the state ENEMYSELECT
     public Actions forcedAction = Actions.NONE; // Action forced by the user previously for the next time we enter the state ENEMYSELECT
 
-    private GameObject arenaParent; // Arena's parent, which will be used to manipulate it
+    public GameObject arenaParent;  // Arena's parent, which will be used to manipulate it
     public GameObject psContainer;  // Container for any particle effect used when using sprite.Dust() and when sparing or killing an enemy
     private AudioSource uiAudio;    // AudioSource only used to play the sound menumove when the Player moves in menus
 
@@ -61,8 +60,6 @@ public class UIController : MonoBehaviour {
     private string stateAfterDialogs = "DEFENDING";      // State to enter after the current arena dialogue is done. Only used after a proper call to BattleDialog()
     private string lastNewState = "UNUSED";              // Allows the detection of state changes during an OnDeath() call so the engine can switch to it properly
 
-    private readonly Vector2 upperLeft = new Vector2(-255, -30);    // Coordinates of the first choice from the top of the Arena in a choice text
-    private bool encounterHasUpdate;                                // True if the encounter has an Update function, false otherwise
     private bool parentStateCall = true;                            // Used to stop the execution of a previous State() call if a new call has been done and to prevent infinite EnteringState() loops
     private bool childStateCalled;                                  // Used to stop the execution of a previous State() call if a new call has been done and to prevent infinite EnteringState() loops
     private bool fleeSwitch;                                        // True if the Player fled, and the encounter can be ended
@@ -294,10 +291,6 @@ public class UIController : MonoBehaviour {
             mainTextManager.SetText(DynValue.NewString(""));
             PlayerController.instance.SetPosition(ArenaManager.instance.currentX, ArenaManager.instance.currentY + 70, true);
             PlayerController.instance.GetComponent<Image>().enabled = true;
-            fightButton.overrideSprite = null;
-            actButton.overrideSprite = null;
-            itemButton.overrideSprite = null;
-            mercyButton.overrideSprite = null;
             mainTextManager.SetPause(true);
         } else if ((state == "DEFENDING" || state == "ENEMYDIALOGUE") && newState != "DEFENDING" && newState != "ENEMYDIALOGUE") {
             ArenaManager.instance.ResetArena();
@@ -305,17 +298,24 @@ public class UIController : MonoBehaviour {
             PlayerController.instance.setControlOverride(true);
         }
 
+        if (state == "ACTIONSELECT" && newState != "ACTIONSELECT") {
+            fightButton.overrideSprite = null;
+            actButton.overrideSprite = null;
+            itemButton.overrideSprite = null;
+            mercyButton.overrideSprite = null;
+        }
+
         if (state == "ENEMYSELECT" && forcedAction == Actions.FIGHT)
             foreach (LifeBarController lbc in arenaParent.GetComponentsInChildren<LifeBarController>())
                 Destroy(lbc.gameObject);
         else if (state == "ENEMYDIALOGUE") {
-            TextManager[] textManagers = FindObjectsOfType<TextManager>();
-            foreach (TextManager textManager in textManagers)
-                if (textManager.gameObject.name.StartsWith("DialogBubble")) // game object name is hardcoded as it won't change
-                    Destroy(textManager.gameObject);
-        } else if (state == "DIALOGRESULT")
-            mainTextManager.SetCaller(EnemyEncounter.script);
-        else if (state == "ATTACKING")
+            for (int i = 0; i < monsterDialogues.Length; i++) {
+                if (monsterDialogues[i] == null || encounter.EnabledEnemies[i] == null)
+                    continue;
+                monsterDialogues[i].DestroyChars();
+                encounter.EnabledEnemies[i].HideBubble();
+            }
+        } else if (state == "ATTACKING")
             FightUIController.instance.HideAttackingUI();
 
         string oldState = state;
@@ -328,6 +328,8 @@ public class UIController : MonoBehaviour {
             if (state != current && !GlobalControls.retroMode)
                 return;
         }
+
+        mainTextManager.SetMugshot(DynValue.NewNil());
 
         switch (state) {
             case "ATTACKING":
@@ -378,7 +380,7 @@ public class UIController : MonoBehaviour {
                 SetPlayerOnSelection(selectedAction);
                 if (!GlobalControls.retroMode)
                     mainTextManager.SetEffect(new TwitchEffect(mainTextManager));
-                mainTextManager.SetText(new SelectMessage(actions, false));
+                mainTextManager.SetText(new SelectMessage(GetActPage(actions, 0, mainTextManager.columnNumber), false, mainTextManager.columnNumber));
                 break;
 
             case "ITEMMENU":
@@ -387,11 +389,11 @@ public class UIController : MonoBehaviour {
                 if (Inventory.inventory.Count == 0)
                     throw new CYFException("Cannot enter state ITEMMENU with empty inventory.");
                 else {
-                    string[] items = GetInventoryPage(0);
+                    string[] items = GetInventoryPage(0, mainTextManager.columnNumber);
                     selectedItem = 0;
                     if (!GlobalControls.retroMode)
                         mainTextManager.SetEffect(new TwitchEffect(mainTextManager));
-                    mainTextManager.SetText(new SelectMessage(items, false));
+                    mainTextManager.SetText(new SelectMessage(items, false, mainTextManager.columnNumber));
                     SetPlayerOnSelection(0);
                     /*ActionDialogResult(new TextMessage[] {
                         new TextMessage("Can't open inventory.\nClogged with pasta residue.", true, false),
@@ -419,7 +421,7 @@ public class UIController : MonoBehaviour {
                 SetPlayerOnSelection(0);
                 if (!GlobalControls.retroMode)
                     mainTextManager.SetEffect(new TwitchEffect(mainTextManager));
-                mainTextManager.SetText(new SelectMessage(mercyOptions, true));
+                mainTextManager.SetText(new SelectMessage(mercyOptions, true, mainTextManager.columnNumber));
                 break;
 
             case "ENEMYSELECT":
@@ -427,27 +429,13 @@ public class UIController : MonoBehaviour {
                 if (encounter.EnabledEnemies.Length == 0)
                     throw new CYFException("Cannot enter state ENEMYSELECT with no active enemies.");
 
-                string[] names = new string[encounter.EnabledEnemies.Length];
-                string[] colorPrefixes = new string[names.Length];
-                for (int i = 0; i < encounter.EnabledEnemies.Length; i++) {
-                    names[i] = encounter.EnabledEnemies[i].Name;
-                    if (encounter.EnabledEnemies[i].CanSpare)
-                        colorPrefixes[i] = "[color:ffff00]";
-                }
-                if (encounter.EnabledEnemies.Length > 3) {
-                    selectedEnemy = 0;
-                    string[] newNames = new string[3];
-                    newNames[0] = names[0];
-                    newNames[1] = names[1];
-                    colorPrefixes[2] = "";
-                    newNames[2] = "\tPAGE 1";
-                    names = newNames;
-                }
-                for (int i = 0; i < names.Length; i++)
-                    names[i] += "[color:ffffff]";
                 if (!GlobalControls.retroMode)
                     mainTextManager.SetEffect(new TwitchEffect(mainTextManager));
-                mainTextManager.SetText(new SelectMessage(names, true, colorPrefixes));
+
+                int enemyPage = encounter.EnabledEnemies.Length <= 3 ? 0 : selectedEnemy / 2;
+                string[] colors;
+                string[] textTemp = GetEnemyPage(enemyPage, mainTextManager.columnNumber, out colors);
+                mainTextManager.SetText(new SelectMessage(textTemp, false, mainTextManager.columnNumber, colors));
                 if (forcedAction != Actions.FIGHT && forcedAction != Actions.ACT)
                     forcedAction = action;
                 if (forcedAction == Actions.FIGHT) {
@@ -473,13 +461,13 @@ public class UIController : MonoBehaviour {
                         if (encounter.EnabledEnemies.Length > 3)
                             if (i > 1)
                                 break;
-                        RenewLifeBars(0);
+                        RenewLifeBars(encounter.EnabledEnemies.Length > 3 ? selectedEnemy / 2 : 0);
                     }
                 }
 
                 if (selectedEnemy >= encounter.EnabledEnemies.Length)
                     selectedEnemy = 0;
-                SetPlayerOnSelection(selectedEnemy * 2); // single list so skip right row by multiplying x2
+                SetPlayerOnSelection((encounter.EnabledEnemies.Length > 3 ? selectedEnemy % 2 : selectedEnemy) * mainTextManager.columnNumber); // single list so skip right row by multiplying x2
                 break;
 
             case "DEFENDING":
@@ -517,6 +505,7 @@ public class UIController : MonoBehaviour {
 
                     GameObject speechBub = encounter.EnabledEnemies[i].bubbleObject;
                     LuaTextManager sbTextMan = speechBub.GetComponentInChildren<LuaTextManager>();
+                    sbTextMan.noSelfAdvance = true;
                     monsterDialogues[i] = sbTextMan;
                     monsterDialogueEnemyID[i] = encounter.enemies.IndexOf(encounter.EnabledEnemies[i]);
 
@@ -532,7 +521,6 @@ public class UIController : MonoBehaviour {
                     encounter.EnabledEnemies[i].UpdateBubble(i);
                     sbTextMan.SetTextQueue(monsterMessages);
                     encounter.EnabledEnemies[i].UpdateBubble(i);
-
                 }
                 break;
 
@@ -588,10 +576,10 @@ public class UIController : MonoBehaviour {
     }
 
     /// <summary>
-    /// Sets the readyToNextLine value of all bubbles to true if they don'thave any extra text to display, false otherwise
+    /// Sets the readyToNextLine value of all bubbles to true if they don't have any extra text to display, false otherwise
     /// </summary>
     public void UpdateNewlineTextState() {
-        for (int i = 0; i < encounter.enemies.Count; i++) {
+        for (int i = 0; i < encounter.EnabledEnemies.Length; i++) {
             try {
                 int monsterDialogueID = Array.IndexOf(monsterDialogueEnemyID, i);
                 readyToNextLine[i] = monsterDialogues[monsterDialogueID] == null || !monsterDialogues[monsterDialogueID].HasNext();
@@ -640,8 +628,8 @@ public class UIController : MonoBehaviour {
                 return;
 
             if (monsterDialogues[index].HasNext()) {
-                encounter.EnabledEnemies[index].UpdateBubble(index);
                 monsterDialogues[index].NextLineText();
+                encounter.EnabledEnemies[index].UpdateBubble(index);
                 someTextsHaveLinesLeft = true;
             } else {
                 monsterDialogues[index].DestroyChars();
@@ -664,16 +652,16 @@ public class UIController : MonoBehaviour {
                 // Part that autoskips text if [nextthisnow] or [finished] is introduced
                 if (monsterDialogues[i].CanAutoSkipThis() || monsterDialogues[i].CanAutoSkip()) {
                     if (monsterDialogues[i].HasNext()) {
-                        encounter.EnabledEnemies[i].UpdateBubble(i);
                         monsterDialogues[i].NextLineText();
+                        encounter.EnabledEnemies[i].UpdateBubble(i);
                     } else {
                         monsterDialogues[i].DestroyChars();
                         encounter.EnabledEnemies[i].HideBubble();
                         continue;
                     }
                 } else if (readyToNextLine[monsterDialogueEnemyID[i]]) {
-                    encounter.EnabledEnemies[i].UpdateBubble(i);
                     monsterDialogues[i].NextLineText();
+                    encounter.EnabledEnemies[i].UpdateBubble(i);
                 }
                 someTextsHaveLinesLeft = true;
             }
@@ -693,40 +681,55 @@ public class UIController : MonoBehaviour {
             SwitchState("DEFENDING");
     }
 
-    private static string[] GetInventoryPage(int page) {
-        int invCount = 0;
-        for (int i = page * 4; i < page * 4 + 4; i++) {
-            if (Inventory.inventory.Count <= i) break;
-            invCount++;
+    private string[] GetActPage(string[] acts, int page, int columns) {
+        string[] items = new string[3 * columns];
+
+        int actsPerPage = 3 * columns;
+        int maxPages = Mathf.CeilToInt(acts.Length / (float)actsPerPage);
+        // Add the page number text if too many acts
+        if (maxPages > 1) {
+            actsPerPage -= columns;
+            maxPages = Mathf.CeilToInt(acts.Length / (float)actsPerPage);
         }
+        int pageActNumber = Mathf.Min(acts.Length - (actsPerPage * page), actsPerPage);
 
-        if (invCount == 0) return null;
-
-        string[] items = new string[6];
-        for (int i = 0; i < invCount; i++)
-            items[i] = Inventory.inventory[i + page * 4].ShortName;
-        items[5] = "PAGE " + (page + 1);
+        for (int i = 0; i < pageActNumber; i++)
+            items[i] = acts[i + page * actsPerPage];
+        if (maxPages > 1)
+            items[3 * columns - 1] = "PAGE " + (page + 1);
         return items;
     }
 
-    private string[] GetEnemyPage(int page, out string[] colors) {
-        int enemyCount = 0;
-        for (int i = page * 2; i < page * 2 + 2; i++) {
-            if (encounter.EnabledEnemies.Length <= i)
-                break;
-            enemyCount++;
+    private string[] GetInventoryPage(int page, int columns) {
+        int itemsPerPage = 2 * columns;
+        int pageItemNumber = Mathf.Min(Inventory.inventory.Count - (itemsPerPage * page), 2 * columns);
+        int maxPages = Mathf.CeilToInt(Inventory.inventory.Count / (float)itemsPerPage);
+        if (pageItemNumber == 0) return null;
+
+        string[] items = new string[3 * columns];
+        for (int i = 0; i < pageItemNumber; i++)
+            items[i] = Inventory.inventory[i + page * itemsPerPage].ShortName;
+        if (maxPages > 1)
+            items[3 * columns - 1] = "PAGE " + (page + 1);
+        return items;
+    }
+
+    private string[] GetEnemyPage(int page, int columns, out string[] colors) {
+        colors = new string[columns * 3];
+
+        int enemyCount = encounter.EnabledEnemies.Length <= 3 ? encounter.EnabledEnemies.Length : Mathf.RoundToInt(Mathf.Clamp(encounter.EnabledEnemies.Length - page * 2, 0, 2));
+        int maxPages = encounter.EnabledEnemies.Length <= 3 ? 1 : Mathf.CeilToInt(encounter.EnabledEnemies.Length / 2f);
+        string[] enemies = new string[columns * 3];
+        for (int i = 0; i < enemyCount; i++) {
+            enemies[columns * i] = encounter.EnabledEnemies[page * 2 + i].Name;
         }
-        colors = new string[6];
-        string[] enemies = new string[6];
-        enemies[0] = encounter.EnabledEnemies[page * 2].Name;
-        if (enemyCount == 2)
-            enemies[2] = "* " + encounter.EnabledEnemies[page * 2 + 1].Name;
         for (int i = page * 2; i < encounter.EnabledEnemies.Length && enemyCount > 0; i++) {
             if (encounter.EnabledEnemies[i].CanSpare)
-                colors[(i - page * 2) * 2] = "[color:ffff00]";
+                colors[(i - page * 2) * columns] = "[color:ffff00]";
             enemyCount--;
         }
-        enemies[5] = "PAGE " + (page + 1);
+        if (maxPages > 1)
+            enemies[columns * 3 - 1] = "PAGE " + (page + 1);
         return enemies;
     }
 
@@ -737,13 +740,14 @@ public class UIController : MonoBehaviour {
         int mNameWidth = (int)UnitaleUtil.CalcTextWidth(mainTextManager) + 50;
         if (mNameWidth > maxWidth)
             maxWidth = mNameWidth;
-        for (int i = page * 2; i <= page * 2 + 1 && i < encounter.EnabledEnemies.Length; i++) {
+        int enemiesToShow = encounter.EnabledEnemies.Length <= 3 ? 3 : 2;
+        for (int i = page * 2; i <= page * 2 + enemiesToShow - 1 && i < encounter.EnabledEnemies.Length; i++) {
             LifeBarController lifeBar = LifeBarController.Create(0, 0, 90);
             lifeBar.transform.SetParent(mainTextManager.transform);
             lifeBar.transform.SetAsFirstSibling();
             lifeBar.background.SetAnchor(0.5f, 0.5f);
             lifeBar.background.MoveTo(maxWidth, initialHealthPos.y - (i - page * 2) * mainTextManager.Charset.LineSpacing);
-            lifeBar.background.rotation = mainTextManager.rotation;
+            lifeBar.fill.rotation = lifeBar.mask.rotation = lifeBar.background.rotation = mainTextManager.rotation;
             lifeBar.SetFillColor(Color.green);
             float hpDivide = encounter.EnabledEnemies[i].HP / (float)encounter.EnabledEnemies[i].MaxHP;
             lifeBar.SetInstant(hpDivide, encounter.EnabledEnemies[i].HP < 0);
@@ -998,9 +1002,13 @@ public class UIController : MonoBehaviour {
         bool up = InputUtil.Pressed(GlobalControls.input.Up);
         bool down = InputUtil.Pressed(GlobalControls.input.Down);
 
+        int xMov = left ? -1 : right ? 1 : 0;
+        int yMov = up ? -1 : down ? 1 : 0;
+        int columns = mainTextManager.columnNumber;
+
         switch (state) {
             case "ACTIONSELECT":
-                if (!left &&!right)
+                if (xMov == 0)
                     break;
 
                 int oldActionIndex = (int)action;
@@ -1020,125 +1028,49 @@ public class UIController : MonoBehaviour {
                 break;
 
             case "ENEMYSELECT":
-                bool odd = false;
-                if (encounter.EnabledEnemies.Length > 3) {
-                    if (!up &&!down &&!right &&!left) break;
-                    if (right) {
-                        if (selectedEnemy % 2 == 1)
-                            odd = true;
-                        selectedEnemy = (selectedEnemy + 2) % encounter.EnabledEnemies.Length;
-                        if (encounter.EnabledEnemies.Length % 2 == 1 && selectedEnemy < 2) selectedEnemy = odd ? 1 : 0;
-                    } else if (left) {
-                        if (selectedEnemy % 2 == 1)
-                            odd = true;
-                        selectedEnemy = (selectedEnemy - 2 + encounter.EnabledEnemies.Length) % encounter.EnabledEnemies.Length;
-                        if (encounter.EnabledEnemies.Length % 2 == 1 && selectedEnemy > encounter.EnabledEnemies.Length - 3)
-                            if (odd && encounter.EnabledEnemies.Length % 2 == 0)      selectedEnemy = encounter.EnabledEnemies.Length - 1;
-                            else if (odd && encounter.EnabledEnemies.Length % 2 == 1) selectedEnemy = encounter.EnabledEnemies.Length - 2;
-                            else if (!odd && encounter.EnabledEnemies.Length % 2 == 0) selectedEnemy = encounter.EnabledEnemies.Length - 2;
-                            else if (!odd && encounter.EnabledEnemies.Length % 2 == 1) selectedEnemy = encounter.EnabledEnemies.Length - 1;
-                    } else if (selectedEnemy / 2 * 2 + (selectedEnemy % 2 + 1) % 2 < encounter.EnabledEnemies.Length)
-                        selectedEnemy = selectedEnemy / 2 * 2 + (selectedEnemy % 2 + 1) % 2;
-                    if (right || left) {
-                        string[] colors;
-                        string[] textTemp = GetEnemyPage(selectedEnemy / 2, out colors);
-                        mainTextManager.SetText(new SelectMessage(textTemp, false, colors));
-                        if (forcedAction == Actions.FIGHT)
-                            RenewLifeBars(selectedEnemy / 2);
-                    }
-                    SetPlayerOnSelection(selectedEnemy % 2 * 2);
-                } else {
-                    if (!up && !down) break;
-                    if (up)           selectedEnemy--;
-                    else              selectedEnemy++;
-                    selectedEnemy = (selectedEnemy + encounter.EnabledEnemies.Length) % encounter.EnabledEnemies.Length;
-                    SetPlayerOnSelection(selectedEnemy * 2);
+                if (xMov == 0 && yMov == 0)
+                    return;
+
+                selectedEnemy = UnitaleUtil.SelectionChoice(encounter.EnabledEnemies.Length, selectedEnemy, xMov, yMov, encounter.EnabledEnemies.Length <= 3 ? 3 : 2, 1);
+                int enemyPage = encounter.EnabledEnemies.Length <= 3 ? 0 : selectedEnemy / 2;
+
+                if (xMov != 0) {
+                    string[] colors;
+                    mainTextManager.SetText(new SelectMessage(GetEnemyPage(enemyPage, columns, out colors), false, columns, colors));
+                    if (forcedAction == Actions.FIGHT)
+                        RenewLifeBars(enemyPage);
                 }
+                SetPlayerOnSelection(Math.Mod(selectedEnemy, encounter.EnabledEnemies.Length <= 3 ? 3 : 2) * 2);
                 break;
 
             case "ACTMENU":
-                if (!up && !down && !left && !right)
+                if (xMov == 0 && yMov == 0)
                     return;
 
-                int xCol = selectedAction % 2; // can just use remainder here, xCol will never be negative at this part
-                int yCol = selectedAction / 2;
-
-                if (left)       xCol--;
-                else if (right) xCol++;
-                else if (up)    yCol--;
-                else            yCol++;
-
-                int actionCount = encounter.EnabledEnemies[selectedEnemy].ActCommands.Length;
-                int leftColSize = (actionCount + 1) / 2;
-                int rightColSize = actionCount / 2;
-
-                if (left || right) xCol = Math.Mod(xCol, 2);
-                if (up || down)    yCol = xCol == 0 ? Math.Mod(yCol, leftColSize) : Math.Mod(yCol, rightColSize);
-                int desiredAction = yCol * 2 + xCol;
-                if (desiredAction >= 0 && desiredAction < actionCount) {
-                    selectedAction = desiredAction;
-                    SetPlayerOnSelection(selectedAction);
-                }
+                string[] acts = encounter.EnabledEnemies[selectedEnemy].ActCommands;
+                bool onePage = acts.Length <= 3 * columns;
+                selectedAction = UnitaleUtil.SelectionChoice(acts.Length, selectedAction, xMov, yMov, onePage ? 3 : 2, columns);
+                SetPlayerOnSelection(selectedAction % ((onePage ? 3 : 2) * columns));
+                int actPage = onePage ? 0 : Mathf.FloorToInt((float)selectedAction / (2 * columns));
+                mainTextManager.SetText(new SelectMessage(GetActPage(acts, actPage, columns), false, columns));
                 break;
 
             case "ITEMMENU":
-                if (!up &&!down &&!left &&!right)
+                if (xMov == 0 && yMov == 0)
                     return;
 
-                int xColI = Math.Mod(selectedItem, 2);
-                int yColI = Math.Mod(selectedItem, 4) / 2;
+                selectedItem = UnitaleUtil.SelectionChoice(Inventory.inventory.Count, selectedItem, xMov, yMov, 2, columns);
+                SetPlayerOnSelection(Math.Mod(selectedItem, 2 * columns));
+                int itemPage = Mathf.FloorToInt(selectedItem / (2f * columns));
+                mainTextManager.SetText(new SelectMessage(GetInventoryPage(itemPage, columns), false, columns));
 
-                if (left)       xColI--;
-                else if (right) xColI++;
-                else if (up)    yColI--;
-                else            yColI++;
-
-                // UnitaleUtil.writeInLog("xCol after controls " + xColI);
-                // UnitaleUtil.writeInLog("yCol after controls " + yColI);
-
-                const int itemCount = 4; // HACK: should do item count based on page number...
-                const int leftColSizeI = (itemCount + 1) / 2;
-                const int rightColSizeI = itemCount / 2;
-                int desiredItem = (selectedItem / 4) * 4;
-                switch (xColI) {
-                    case -1:
-                        xColI       =  1;
-                        desiredItem -= 4;
-                        break;
-                    case 2:
-                        xColI       =  0;
-                        desiredItem += 4;
-                        break;
-                }
-
-                if (up || down)
-                    yColI = xColI == 0 ? Math.Mod(yColI, leftColSizeI) : Math.Mod(yColI, rightColSizeI);
-                desiredItem += (yColI * 2 + xColI);
-
-                // UnitaleUtil.writeInLog("xCol after evaluation " + xColI);
-                // UnitaleUtil.writeInLog("yCol after evaluation " + yColI);
-
-                // UnitaleUtil.writeInLog("Unchecked desired item " + desiredItem);
-
-                if (desiredItem < 0)                              desiredItem = Math.Mod(desiredItem, 4) + (Inventory.inventory.Count / 4) * 4;
-                else if (desiredItem > Inventory.inventory.Count) desiredItem = Math.Mod(desiredItem, 4);
-
-                if (desiredItem != selectedItem && desiredItem < Inventory.inventory.Count) { // 0 check not needed, done before
-                    selectedItem = desiredItem;
-                    SetPlayerOnSelection(Math.Mod(selectedItem, 4));
-                    int page = selectedItem / 4;
-                    mainTextManager.SetText(new SelectMessage(GetInventoryPage(page), false));
-                }
-
-                // UnitaleUtil.writeInLog("Desired item index after evaluation " + desiredItem);
                 break;
 
             case "MERCYMENU":
-                if (!up && !down) break;
-                if (up)           selectedMercy--;
-                else              selectedMercy++;
-                selectedMercy = encounter.CanRun ? Math.Mod(selectedMercy, 2) : 0;
+                if (yMov == 0)
+                    break;
 
+                selectedMercy = UnitaleUtil.SelectionChoice(encounter.CanRun ? 2 : 1, selectedMercy, 0, yMov, 2, 1);
                 SetPlayerOnSelection(selectedMercy * 2);
                 break;
         }
@@ -1227,10 +1159,12 @@ public class UIController : MonoBehaviour {
     // 2    3
     // 4    5
     private void SetPlayerOnSelection(int selection) {
-        int xMv = selection % 2; // remainder safe again, selection is never negative
-        int yMv = selection / 2;
-        PlayerController.instance.SetPosition(upperLeft.x + ArenaManager.instance.currentX + xMv * 256,
-                                              upperLeft.y + ArenaManager.instance.currentY + ArenaManager.instance.currentHeight - yMv * mainTextManager.Charset.LineSpacing, true);
+        int xMv = selection % mainTextManager.columnNumber;
+        int yMv = selection / mainTextManager.columnNumber;
+
+        if (mainTextManager.letters.Count > 0)
+            PlayerController.instance.SetPosition(mainTextManager.absx + mainTextManager.letters[0].image.rectTransform.sizeDelta.x / 2 + xMv * mainTextManager.columnShift + 4,
+                                                  mainTextManager.absy + mainTextManager.letters[0].image.rectTransform.sizeDelta.y / 2 - yMv * mainTextManager.Charset.LineSpacing, true);
     }
 
     private void Start() {
@@ -1306,8 +1240,6 @@ public class UIController : MonoBehaviour {
         ControlPanel.instance.FrameBasedMovement = false;
 
         LuaScriptBinder.CopyToBattleVar();
-        if (EnemyEncounter.script.GetVar("Update") != null)
-            encounterHasUpdate = true;
         GameObject.Find("Main Camera").GetComponent<ProjectileHitboxRenderer>().enabled = !GameObject.Find("Main Camera").GetComponent<ProjectileHitboxRenderer>().enabled;
         //There are scene init bugs, let's fix them!
         /*if (GameObject.Find("TopLayer").transform.parent != GameObject.Find("Canvas").transform) {
@@ -1458,8 +1390,7 @@ public class UIController : MonoBehaviour {
         stateSwitched = false;
         if (encounter.gameOverStance)
             return;
-        if (encounterHasUpdate)
-            UnitaleUtil.TryCall(EnemyEncounter.script, "Update");
+        UnitaleUtil.TryCall(EnemyEncounter.script, "Update");
 
         if (frozenState != "PAUSE")
             return;
@@ -1504,18 +1435,18 @@ public class UIController : MonoBehaviour {
             bool playSound = true;
             foreach (EnemyController enemyController in encounter.EnabledEnemies) {
                 if (enemyController.HP > 0 || enemyController.Unkillable) continue;
-                // fightUI.disableImmediate();
                 onDeathSwitch = true;
-                if (UnitaleUtil.TryCall(enemyController.script, "OnDeath")) continue;
+                bool hasOnDeath = UnitaleUtil.TryCall(enemyController.script, "OnDeath");
                 onDeathSwitch = false;
-                noOnDeath = false;
+                if (hasOnDeath) {
+                    noOnDeath = false;
+                    continue;
+                }
                 enemyController.DoKill(playSound);
                 playSound = false;
 
                 if (encounter.EnabledEnemies.Length > 0)
                     SwitchState("ENEMYDIALOGUE");
-                //else
-                //    checkAndTriggerVictory();
             }
 
             if (state == "ATTACKING" && fightUI.Finished()) {
@@ -1527,8 +1458,5 @@ public class UIController : MonoBehaviour {
             }
             needOnDeath = false;
         }
-        //if (state == UIState.ENEMYDIALOGUE)
-        //    if ((Vector2)arenaParent.transform.position == new Vector2(320, 90))
-        //        PlayerController.instance.setControlOverride(false);
     }
 }
