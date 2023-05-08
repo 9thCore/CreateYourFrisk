@@ -93,6 +93,10 @@ Shader "CYF/Tiler"
             float OffsetX;
             float OffsetY;
 
+            float mod(float a, float b){
+                return (a%b + b)%b;
+            }
+
             v2f vert(appdata_t v)
             {
                 v2f OUT;
@@ -112,8 +116,8 @@ Shader "CYF/Tiler"
 
                 half2 tileUV;
 
-                tileUV.x = (IN.uv.x*TilesX) % 1 + OffsetX;
-                tileUV.y = (IN.uv.y*TilesY) % 1 + OffsetY;
+                tileUV.x = mod((IN.uv.x + OffsetX)*TilesX, 1.0);
+                tileUV.y = mod((IN.uv.y + OffsetY)*TilesY, 1.0);
 
                 half4 color = (tex2D(_MainTex, tileUV) + _TextureSampleAdd) * IN.color;
 

@@ -73,3 +73,6 @@ sysinfo.txt
 # GIMP project files
 *.xcf
 *.xcf.meta
+
+*.shader
+*.shader.meta

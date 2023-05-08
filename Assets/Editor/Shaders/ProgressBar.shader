@@ -19,6 +19,16 @@ Shader "CYF/ProgressBar"
 		ProgressMask("Progress mask", 2D) = "black" {}
 		Progress("Progress value", Float) = 1
 
+		ProgressedR("Progressed red", Float) = 1
+		ProgressedG("Progressed green", Float) = 1
+		ProgressedB("Progressed blue", Float) = 1
+		ProgressedA("Progressed alpha", Float) = 1
+
+		UnprogressedR("Progressed red", Float) = 1
+		UnprogressedG("Progressed green", Float) = 1
+		UnprogressedB("Progressed blue", Float) = 1
+		UnprogressedA("Progressed alpha", Float) = 0
+
 	}
 
 	SubShader
@@ -87,6 +97,9 @@ Shader "CYF/ProgressBar"
 			sampler2D ProgressMask;
 			float Progress;
 
+			float ProgressedR, ProgressedG, ProgressedB, ProgressedA;
+			float UnprogressedR, UnprogressedG, UnprogressedB, UnprogressedA;
+
 			v2f vert(appdata_t v)
 			{
 				v2f OUT;
@@ -104,11 +117,11 @@ Shader "CYF/ProgressBar"
 			fixed4 frag(v2f IN) : SV_Target
 			{
 
-				half4 colpm = (tex2D(ProgressMask, IN.uv) + _TextureSampleAdd) * IN.color;
+				half4 colpm = (tex2D(ProgressMask, IN.uv) + _TextureSampleAdd);
 
 				half4 color = (tex2D(_MainTex, IN.uv) + _TextureSampleAdd) * IN.color;
 
-				color *= step(colpm.r, Progress);
+				color *= lerp(half4(ProgressedR, ProgressedG, ProgressedB, ProgressedA), half4(UnprogressedR, UnprogressedG, UnprogressedB, UnprogressedA), 1 - step(colpm.r, Progress));
 
 				#ifdef UNITY_UI_CLIP_RECT
 				color.a *= UnityGet2DClipping(IN.worldPosition.xy, _ClipRect);

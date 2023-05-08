@@ -18,6 +18,9 @@ Shader "CYF/Pixelate"
 
         XPixelation("The amount to pixelate on the x axis.", Float) = 1
         YPixelation("The amount to pixelate on the y axis.", Float) = 1
+
+        XPivot("horizontal pivot", Float) = 0.5
+        YPivot("vertical pivot", Float) = 0.5
     }
 
     SubShader
@@ -87,6 +90,9 @@ Shader "CYF/Pixelate"
             float XPixelation;
             float YPixelation;
 
+            float XPivot;
+            float YPivot;
+
             v2f vert(appdata_t v)
             {
                 v2f OUT;
@@ -108,8 +114,8 @@ Shader "CYF/Pixelate"
                 pixelcount.x = _MainTex_TexelSize.z/XPixelation;
                 pixelcount.y = _MainTex_TexelSize.w/YPixelation;
 
-                IN.uv.x = floor(IN.uv.x * pixelcount) / pixelcount;
-                IN.uv.y = floor(IN.uv.y * pixelcount) / pixelcount;
+                IN.uv.x = floor((IN.uv.x - XPivot) * pixelcount) / pixelcount + XPivot;
+                IN.uv.y = floor((IN.uv.y - YPivot) * pixelcount) / pixelcount + YPivot;
 
                 #ifndef NO_PIXEL_SNAP
                 IN.uv.x = (floor(IN.uv.x * _MainTex_TexelSize.z) + 0.5) / _MainTex_TexelSize.z;
