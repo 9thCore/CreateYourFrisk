@@ -37,8 +37,8 @@ public class UIController : MonoBehaviour {
 
     private readonly Vector2 initialHealthPos = new Vector2(250, -2); // Initial health bar position for target selection
 
-    public LuaTextManager[] monsterDialogues;   // Enemies' dialogue bubbles' text objects appearing in the state ENEMYDIALOGUE
-    public int[] monsterDialogueEnemyID;        // Stores the ID of the associated enemy
+    public LuaTextManager[] monsterDialogues = new LuaTextManager[0]; // Enemies' dialogue bubbles' text objects appearing in the state ENEMYDIALOGUE
+    public int[] monsterDialogueEnemyID;                              // Stores the ID of the associated enemy
 
     private bool musicPausedFromRunning;    // Used to pause the BGM when trying to flee in retromode for a comedic effect
     private int runAwayAttempts;            // Amount of times the Player tried to flee unsuccessfully in this encounter
@@ -65,7 +65,7 @@ public class UIController : MonoBehaviour {
     private bool fleeSwitch;                                        // True if the Player fled, and the encounter can be ended
     public Dictionary<int, string[]> messages;                      // Stores the messages enemies will say in the state ENEMYDIALOGUE
     public bool[] readyToNextLine;                                  // Used to know which enemy bubbles are done displaying their text
-    public bool needOnDeath;                                        // Used to force the check on whether the enemies are dead or not
+    public bool checkDeathCall;                                        // Used to force the check on whether the enemies are dead or not
     private bool onDeathSwitch;                                     // Allows to switch to a given state if State() was used in OnDeath()
     public bool stateSwitched;                                      // True if the state has been changed this frame, false otherwise
     public bool battleDialogueStarted;                              // True if the battle dialog is being displayed, false otherwise. Only used for the state ITEMMENU, and not updated outside of it
@@ -309,14 +309,19 @@ public class UIController : MonoBehaviour {
             foreach (LifeBarController lbc in arenaParent.GetComponentsInChildren<LifeBarController>())
                 Destroy(lbc.gameObject);
         else if (state == "ENEMYDIALOGUE") {
-            for (int i = 0; i < monsterDialogues.Length; i++) {
-                if (monsterDialogues[i] == null || encounter.EnabledEnemies[i] == null)
+            foreach (EnemyController enemy in encounter.enemies) {
+                enemy.HideBubble();
+                if (!enemy.bubbleObject)
                     continue;
-                monsterDialogues[i].DestroyChars();
-                encounter.EnabledEnemies[i].HideBubble();
+                LuaTextManager sbTextMan = enemy.bubbleObject.GetComponentInChildren<LuaTextManager>();
+                if (!sbTextMan)
+                    continue;
+                sbTextMan.DestroyChars();
             }
         } else if (state == "ATTACKING")
             FightUIController.instance.HideAttackingUI();
+        else if (state == "DIALOGRESULT")
+            mainTextManager.SetCaller(EnemyEncounter.script);
 
         string oldState = state;
         state = newState;
@@ -414,8 +419,10 @@ public class UIController : MonoBehaviour {
                 selectedMercy = 0;
                 string[] mercyOptions = new string[1 + (encounter.CanRun ? 1 : 0)];
                 mercyOptions[0] = "Spare";
-                if (encounter.EnabledEnemies.Any(enemy => enemy.CanSpare))
-                    mercyOptions[0] = "[starcolor:ffff00][color:ffff00]" + mercyOptions[0] + "[color:ffffff]";
+                if (encounter.EnabledEnemies.Any(enemy => enemy.CanSpare)) {
+                    string hexColor = ParseUtil.GetBytesFromColor(encounter.SpareColor, true);
+                    mercyOptions[0] = "[alpha:" + hexColor.Substring(6) + "][starcolor:" + hexColor.Substring(0, 6) + "][color:" + hexColor.Substring(0, 6) + "]" + mercyOptions[0] + "[color:ffffff]";
+                }
                 if (encounter.CanRun)
                     mercyOptions[1] = "Flee";
                 SetPlayerOnSelection(0);
@@ -452,7 +459,7 @@ public class UIController : MonoBehaviour {
                         count++;
                         //int mNameWidth = (int)UnitaleUtil.calcTotalLength(mainTextManager, lastCount, count);
                         for (int j = 0; j <= 1 && j < encounter.EnabledEnemies.Length; j++) {
-                            int mNameWidth = (int)UnitaleUtil.CalcTextWidth(mainTextManager) + 50;
+                            int mNameWidth = (int)UnitaleUtil.PredictTextWidth(mainTextManager) + 50;
                             if (mNameWidth > maxWidth)
                                 maxWidth = mNameWidth;
                         }
@@ -505,7 +512,6 @@ public class UIController : MonoBehaviour {
 
                     GameObject speechBub = encounter.EnabledEnemies[i].bubbleObject;
                     LuaTextManager sbTextMan = speechBub.GetComponentInChildren<LuaTextManager>();
-                    sbTextMan.noSelfAdvance = true;
                     monsterDialogues[i] = sbTextMan;
                     monsterDialogueEnemyID[i] = encounter.enemies.IndexOf(encounter.EnabledEnemies[i]);
 
@@ -581,8 +587,7 @@ public class UIController : MonoBehaviour {
     public void UpdateNewlineTextState() {
         for (int i = 0; i < encounter.EnabledEnemies.Length; i++) {
             try {
-                int monsterDialogueID = Array.IndexOf(monsterDialogueEnemyID, i);
-                readyToNextLine[i] = monsterDialogues[monsterDialogueID] == null || !monsterDialogues[monsterDialogueID].HasNext();
+                readyToNextLine[monsterDialogueEnemyID[i]] = monsterDialogues[i] == null || !monsterDialogues[i].HasNext();
             } catch (Exception e) {
                 throw new CYFException("Error while updating monster #" + i + ": \n" + e.Message + "\n\n" + e.StackTrace);
             }
@@ -592,20 +597,21 @@ public class UIController : MonoBehaviour {
     private void UpdateMonsterDialogue() {
         bool allGood = true;
         for (int i = 0; i < monsterDialogues.Length; i++) {
-            if (readyToNextLine[monsterDialogueEnemyID[i]]) continue;
-            if (monsterDialogues[i] == null) {
-                readyToNextLine[monsterDialogueEnemyID[i]] = true;
-                continue;
-            }
-            if (monsterDialogues[i].CanAutoSkip()) {
-                readyToNextLine[monsterDialogueEnemyID[i]] = true;
-                DoNextMonsterDialogue(false, i);
-            }
             if (monsterDialogues[i].CanAutoSkipAll()) {
                 for (int j = 0; j < monsterDialogues.Length; j++)
                     readyToNextLine[monsterDialogueEnemyID[j]] = true;
                 DoNextMonsterDialogue();
                 return;
+            }
+            if (monsterDialogues[i].CanAutoSkip()) {
+                readyToNextLine[monsterDialogueEnemyID[i]] = true;
+                DoNextMonsterDialogue(false, i);
+            }
+
+            if (readyToNextLine[monsterDialogueEnemyID[i]]) continue;
+            if (monsterDialogues[i] == null) {
+                readyToNextLine[monsterDialogueEnemyID[i]] = true;
+                continue;
             }
 
             if ((!monsterDialogues[i].AllLinesComplete() || monsterDialogues[i].LineCount() == 0) && !monsterDialogues[i].CanAutoSkipThis() && (monsterDialogues[i].AllLinesComplete() || !monsterDialogues[i].LineComplete())) {
@@ -624,6 +630,7 @@ public class UIController : MonoBehaviour {
     public void DoNextMonsterDialogue(bool singleLineAll = false, int index = -1) {
         bool someTextsHaveLinesLeft = false;
         if (index != -1) {
+            // Forcefully skips only one monster text object
             if (monsterDialogues[index] == null)
                 return;
 
@@ -639,36 +646,44 @@ public class UIController : MonoBehaviour {
                         someTextsHaveLinesLeft = true;
             }
         } else if (!singleLineAll) {
-            for (int i = 0; i < monsterDialogues.Length; i++) {
-                if (monsterDialogues[i] == null)
+            for (int i = 0; i < encounter.EnabledEnemies.Length; i++) {
+                EnemyController enemy = encounter.EnabledEnemies[i];
+                if (!enemy.bubbleObject)
+                    continue;
+                LuaTextManager sbTextMan = enemy.bubbleObject.GetComponentInChildren<LuaTextManager>();
+                if (!sbTextMan)
                     continue;
 
-                if (monsterDialogues[i].AllLinesComplete() && monsterDialogues[i].LineCount() != 0 || (!monsterDialogues[i].HasNext() && readyToNextLine[i])) {
-                    monsterDialogues[i].DestroyChars();
-                    encounter.EnabledEnemies[i].HideBubble();
+                if (sbTextMan.AllLinesComplete() && sbTextMan.LineCount() != 0 || (!sbTextMan.HasNext() && readyToNextLine[monsterDialogueEnemyID[i]])) {
+                    sbTextMan.DestroyChars();
+                    enemy.HideBubble();
                     continue;
                 }
 
                 // Part that autoskips text if [nextthisnow] or [finished] is introduced
-                if (monsterDialogues[i].CanAutoSkipThis() || monsterDialogues[i].CanAutoSkip()) {
-                    if (monsterDialogues[i].HasNext()) {
-                        monsterDialogues[i].NextLineText();
-                        encounter.EnabledEnemies[i].UpdateBubble(i);
+                if (sbTextMan.CanAutoSkipThis() || sbTextMan.CanAutoSkip() || readyToNextLine[monsterDialogueEnemyID[i]]) {
+                    if (sbTextMan.HasNext()) {
+                        sbTextMan.NextLineText();
+                        enemy.UpdateBubble(i);
                     } else {
-                        monsterDialogues[i].DestroyChars();
-                        encounter.EnabledEnemies[i].HideBubble();
+                        sbTextMan.DestroyChars();
+                        enemy.HideBubble();
                         continue;
                     }
-                } else if (readyToNextLine[monsterDialogueEnemyID[i]]) {
-                    monsterDialogues[i].NextLineText();
-                    encounter.EnabledEnemies[i].UpdateBubble(i);
                 }
                 someTextsHaveLinesLeft = true;
             }
         } else
-            for (int i = 0; i < monsterDialogues.Length; i++) {
-                monsterDialogues[i].DestroyChars();
-                encounter.EnabledEnemies[i].HideBubble();
+            for (int i = 0; i < encounter.enemies.Count; i++) {
+                EnemyController enemy = encounter.enemies[i];
+                if (!enemy.bubbleObject)
+                    continue;
+                LuaTextManager sbTextMan = enemy.bubbleObject.GetComponentInChildren<LuaTextManager>();
+                if (!sbTextMan)
+                    continue;
+
+                sbTextMan.DestroyChars();
+                enemy.HideBubble();
             }
 
         if (someTextsHaveLinesLeft)
@@ -724,8 +739,10 @@ public class UIController : MonoBehaviour {
             enemies[columns * i] = encounter.EnabledEnemies[page * 2 + i].Name;
         }
         for (int i = page * 2; i < encounter.EnabledEnemies.Length && enemyCount > 0; i++) {
-            if (encounter.EnabledEnemies[i].CanSpare)
-                colors[(i - page * 2) * columns] = "[color:ffff00]";
+            if (encounter.EnabledEnemies[i].CanSpare) {
+                string hexColor = ParseUtil.GetBytesFromColor(encounter.EnabledEnemies[i].SpareColor, true);
+                colors[(i - page * 2) * columns] = "[color:" + hexColor.Substring(0, 6) + "][alpha:" + hexColor.Substring(6) + "]";
+            }
             enemyCount--;
         }
         if (maxPages > 1)
@@ -737,7 +754,7 @@ public class UIController : MonoBehaviour {
         int maxWidth = (int)initialHealthPos.x;
         foreach (LifeBarController lbc in arenaParent.GetComponentsInChildren<LifeBarController>())
             Destroy(lbc.gameObject);
-        int mNameWidth = (int)UnitaleUtil.CalcTextWidth(mainTextManager) + 50;
+        int mNameWidth = (int)UnitaleUtil.PredictTextWidth(mainTextManager) + 50;
         if (mNameWidth > maxWidth)
             maxWidth = mNameWidth;
         int enemiesToShow = encounter.EnabledEnemies.Length <= 3 ? 3 : 2;
@@ -746,7 +763,7 @@ public class UIController : MonoBehaviour {
             lifeBar.transform.SetParent(mainTextManager.transform);
             lifeBar.transform.SetAsFirstSibling();
             lifeBar.background.SetAnchor(0.5f, 0.5f);
-            lifeBar.background.MoveTo(maxWidth, initialHealthPos.y - (i - page * 2) * mainTextManager.Charset.LineSpacing);
+            lifeBar.background.MoveTo(maxWidth, initialHealthPos.y - (i - page * 2) * mainTextManager.font.LineSpacing);
             lifeBar.fill.rotation = lifeBar.mask.rotation = lifeBar.background.rotation = mainTextManager.rotation;
             lifeBar.SetFillColor(Color.green);
             float hpDivide = encounter.EnabledEnemies[i].HP / (float)encounter.EnabledEnemies[i].MaxHP;
@@ -1164,7 +1181,7 @@ public class UIController : MonoBehaviour {
 
         if (mainTextManager.letters.Count > 0)
             PlayerController.instance.SetPosition(mainTextManager.absx + mainTextManager.letters[0].image.rectTransform.sizeDelta.x / 2 + xMv * mainTextManager.columnShift + 4,
-                                                  mainTextManager.absy + mainTextManager.letters[0].image.rectTransform.sizeDelta.y / 2 - yMv * mainTextManager.Charset.LineSpacing, true);
+                                                  mainTextManager.absy + mainTextManager.letters[0].image.rectTransform.sizeDelta.y / 2 - yMv * mainTextManager.font.LineSpacing, true);
     }
 
     private void Start() {
@@ -1407,7 +1424,7 @@ public class UIController : MonoBehaviour {
 
         if (state == "ENEMYDIALOGUE") {
             if (monsterDialogues.All(mgr => mgr.CanAutoSkipThis())) DoNextMonsterDialogue();
-            else                                                             UpdateMonsterDialogue();
+            else                                                    UpdateMonsterDialogue();
         }
 
         if (state == "DEFENDING") {
@@ -1430,7 +1447,7 @@ public class UIController : MonoBehaviour {
         else if (InputUtil.Pressed(GlobalControls.input.Confirm))
             SwitchState("DONE");
 
-        if (state == "ATTACKING" && fightUI.Finished() || needOnDeath) {
+        if (state == "ATTACKING" && fightUI.Finished() || checkDeathCall) {
             bool noOnDeath = true;
             bool playSound = true;
             foreach (EnemyController enemyController in encounter.EnabledEnemies) {
@@ -1445,7 +1462,7 @@ public class UIController : MonoBehaviour {
                 enemyController.DoKill(playSound);
                 playSound = false;
 
-                if (encounter.EnabledEnemies.Length > 0)
+                if (encounter.EnabledEnemies.Length > 0 && !checkDeathCall)
                     SwitchState("ENEMYDIALOGUE");
             }
 
@@ -1456,7 +1473,7 @@ public class UIController : MonoBehaviour {
                 } else if (noOnDeath)
                     SwitchState("ENEMYDIALOGUE");
             }
-            needOnDeath = false;
+            checkDeathCall = false;
         }
     }
 }

@@ -118,7 +118,7 @@ public class FightUI : MonoBehaviour {
                 enemy.GetComponent<RectTransform>().anchoredPosition = new Vector2(localEnePos.x + shakeX[shakeIndex], localEnePos.y);
             }
             if (shakeTimer < 1.5f)
-                damageText.transform.localPosition = new Vector2(-UnitaleUtil.CalcTextWidth(damageText) / 2 + enemy.offsets[2].x,
+                damageText.transform.localPosition = new Vector2(-UnitaleUtil.PredictTextWidth(damageText) / 2 + enemy.offsets[2].x,
                                                                  -eneSize.y / 2 + enemy.offsets[2].y + 40 * (2 + Mathf.Sin(shakeTimer * Mathf.PI * 0.75f)));
             shakeTimer += Time.deltaTime;
             if (shakeTimer >= totalShakeTime)
@@ -143,14 +143,14 @@ public class FightUI : MonoBehaviour {
                 } else if (Damage > 0)                 damageTextStr = "[color:ff0000]" + Damage;
                 else                                   damageTextStr = "[color:00ff00]" + Damage;
                 damageText.SetText(new TextMessage(damageTextStr, false, true));
-                damageText.transform.localPosition = new Vector2(-UnitaleUtil.CalcTextWidth(damageText) / 2 + enemy.offsets[2].x, -eneSize.y / 2 + enemy.offsets[2].y + 40);
+                damageText.transform.localPosition = new Vector2(-UnitaleUtil.PredictTextWidth(damageText) / 2 + enemy.offsets[2].x, -eneSize.y / 2 + enemy.offsets[2].y + 40);
 
                 // initiate lifebar and set lerp to its new health value
                 if (Damage != 0) {
                     int newHP = enemy.HP - Damage;
                     lifeBar.outline.img.transform.localPosition = new Vector2(enemy.offsets[2].x - 1, -eneSize.y / 2 + 20 + enemy.offsets[2].y - 1);
                     lifeBar.Resize(enemy.GetComponent<RectTransform>().rect.width, 13);
-                    lifeBar.SetLerp(enemy.HP / (float)enemy.MaxHP, newHP / (float)enemy.MaxHP);
+                    lifeBar.SetLerpFull(enemy.HP / (float)enemy.MaxHP, newHP / (float)enemy.MaxHP);
                     lifeBar.SetVisible(true);
                     enemy.doDamage(Damage);
                 }

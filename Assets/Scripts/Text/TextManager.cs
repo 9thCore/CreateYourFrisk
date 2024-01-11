@@ -11,11 +11,13 @@ public class TextManager : MonoBehaviour {
     public struct LetterData {
         public int index;
         public Image image;
+        public Sprite sprite;
         public Vector2 position;
         public bool commandColorSet, commandAlphaSet;
-        public LetterData(int index, Image image, Vector2 position, bool commandColorSet, bool commandAlphaSet) {
+        public LetterData(int index, Image image, Sprite sprite, Vector2 position, bool commandColorSet, bool commandAlphaSet) {
             this.index = index;
             this.image = image;
+            this.sprite = sprite;
             this.position = position;
             this.commandColorSet = commandColorSet;
             this.commandAlphaSet = commandAlphaSet;
@@ -23,9 +25,11 @@ public class TextManager : MonoBehaviour {
     }
     internal List<LetterData> letters = new List<LetterData>();
 
-    protected UnderFont default_charset;
+    protected UnderFont defaultFont;
     protected string defaultVoice;
-    [MoonSharpHidden] public string letterSound;
+    [MoonSharpHidden] public UnderFont font { get; protected set; }
+    [MoonSharpHidden] public string fontVoice;
+    private string commandVoice;
 
     protected TextEffect textEffect;
     private string letterEffect = "none";
@@ -34,9 +38,9 @@ public class TextManager : MonoBehaviour {
     private float letterIntensity;
 
     public static string[] commandList = { "color", "alpha", "charspacing", "linespacing", "starcolor", "instant", "font", "effect", "noskip", "w", "waitall", "novoice",
-                                           "next", "finished", "nextthisnow", "noskipatall", "waitfor", "speed", "letters", "voice", "func", "mugshot",
+                                           "next", "finished", "nextthisnow", "noskipatall", "waitfor", "speed", "letters", "lettersperframe", "voice", "func", "mugshot",
                                            "music", "sound", "health", "lettereffect"};
-    public static string[] movementCommands = { "charspacing", "linespacing" };
+    public static string[] movementCommands = { "charspacing", "linespacing", "font" };
     public int currentLine;
     [MoonSharpHidden] public int _textMaxWidth;
     public int currentCharacter;
@@ -73,7 +77,8 @@ public class TextManager : MonoBehaviour {
     private float mugshotTimer;
 
     // private int letterSpeed = 1;
-    private int letterOnceValue;
+    private int lettersToDisplay;
+    private int lettersToDisplayOnce;
     private KeyCode waitingChar = KeyCode.None;
 
     protected Color commandColor = Color.white;
@@ -101,11 +106,9 @@ public class TextManager : MonoBehaviour {
 
     [MoonSharpHidden] public ScriptWrapper caller;
 
-    [MoonSharpHidden] public UnderFont Charset { get; protected set; }
     [MoonSharpHidden] public TextMessage[] textQueue = null;
     //public string[] mugshotsPath;
     //public bool overworld;
-    [MoonSharpHidden] public bool blockSkip;
     [MoonSharpHidden] public bool skipNowIfBlocked = false;
     internal bool noSkip1stFrame = true;
 
@@ -128,26 +131,26 @@ public class TextManager : MonoBehaviour {
         firstChar = false;
         vSpacing = 0;
         mugshotList = null;
-        letterOnceValue = 0;
+        lettersToDisplay = 1;
+        lettersToDisplayOnce = 0;
         commandColorSet = false;
         commandAlphaSet = false;
         letterTimer = 0.0f;
         textQueue = null;
-        blockSkip = false;
     }
 
     [MoonSharpHidden] public void SetCaller(ScriptWrapper s) { caller = s; }
 
     public void SetFont(UnderFont font, bool temporary = false) {
-        Charset = font;
+        this.font = font;
         if (!temporary) {
-            default_charset = font;
+            defaultFont = font;
             defaultVoice = font.SoundName;
         } else if (font.Sound != null)
-            letterSound = font.SoundName;
+            fontVoice = font.SoundName;
 
-        if (default_charset == null)
-            default_charset = font;
+        if (defaultFont == null)
+            defaultFont = font;
 
         vSpacing = 0;
         hSpacing = font.CharSpacing;
@@ -159,19 +162,25 @@ public class TextManager : MonoBehaviour {
         commandColor = defaultColor;
     }
 
+    public string GetVoice() {
+        string voice = commandVoice ?? fontVoice;
+        return voice != "none" ? voice : null;
+    }
+
     [MoonSharpHidden] public void SetHorizontalSpacing(float spacing = 3) { hSpacing = spacing; }
     [MoonSharpHidden] public void SetVerticalSpacing(float spacing = 0) { vSpacing = spacing; }
 
     [MoonSharpHidden] public void ResetFont() {
-        if (Charset == null || default_charset == null)
+        if (font == null || defaultFont == null)
             if (GetType() == typeof(LuaTextManager) && !((LuaTextManager)this).isMainTextObject)
                 ((LuaTextManager) this).SetFont(SpriteFontRegistry.UI_MONSTERTEXT_NAME);
             else
                 SetFont(SpriteFontRegistry.Get(SpriteFontRegistry.UI_DEFAULT_NAME));
-        Charset = default_charset;
-        System.Diagnostics.Debug.Assert(default_charset != null, "default_charset != null");
-        letterSound = defaultVoice ?? default_charset.SoundName;
-        fontDefaultColor = default_charset.DefaultColor;
+        font = defaultFont;
+        System.Diagnostics.Debug.Assert(defaultFont != null, "defaultFont != null");
+        fontVoice = defaultVoice ?? font.SoundName;
+        fontDefaultColor = font.DefaultColor;
+        hSpacing = font.CharSpacing;
 
         if (!(this as LuaTextManager))
             defaultColor = fontDefaultColor;
@@ -214,6 +223,12 @@ public class TextManager : MonoBehaviour {
 
     public void SetText(TextMessage text) { SetTextQueue(new[] { text }); }
 
+    public bool GetAutoLineBreak() {
+        if (textQueue[currentLine].ForceNoAutoLineBreak) return false;
+        if (!GlobalControls.isInFight || EnemyEncounter.script.GetVar("autolinebreak").Boolean) return true;
+        return (this as LuaTextManager) != null && this != UIController.instance.mainTextManager;
+    }
+
     [MoonSharpHidden] public void SetTextQueue(TextMessage[] newTextQueue) {
         if (UnitaleUtil.IsOverworld && (gameObject.name == "TextManager OW"))
             PlayerOverworld.AutoSetUIPos();
@@ -255,7 +270,6 @@ public class TextManager : MonoBehaviour {
     }
 
     [MoonSharpHidden] public bool CanSkip() { return currentSkippable; }
-
     [MoonSharpHidden] public bool CanAutoSkip() { return autoSkip; }
     [MoonSharpHidden] public bool CanAutoSkipThis() { return autoSkipThis; }
     [MoonSharpHidden] public bool CanAutoSkipAll() { return autoSkipAll; }
@@ -352,6 +366,7 @@ public class TextManager : MonoBehaviour {
         skipFromPlayer   = false;
         firstChar        = false;
         lineHasMugshot   = mugshotList != null;
+        commandVoice     = null;
 
         SetMugshotShift(oldLineHasMugshot);
 
@@ -367,25 +382,22 @@ public class TextManager : MonoBehaviour {
         float rot = rotation;
         rotation = 0;
         float xScale = 1, yScale = 1;
-        if (GetType() == typeof(LuaTextManager)) {
-            xScale = ((LuaTextManager)this).xscale;
-            yScale = ((LuaTextManager)this).yscale;
-            ((LuaTextManager)this).Scale(1, 1);
+        LuaTextManager ltm = this as LuaTextManager;
+        if (ltm) {
+            xScale = ltm.xscale;
+            yScale = ltm.yscale;
         }
-        SpawnText();
-        if (GetType() == typeof(LuaTextManager))
-            ((LuaTextManager)this).Scale(xScale, yScale);
+        if (ltm) ltm.SpawnText();
+        else     SpawnText();
         rotation = rot;
 
         if (UnitaleUtil.IsOverworld && this == PlayerOverworld.instance.textmgr) {
             if (textQueue[line].ActualText) {
                 if (transform.parent.GetComponent<Image>().color.a == 0)
                     SetTextFrameAlpha(1);
-                blockSkip = false;
             } else {
                 if (transform.parent.GetComponent<Image>().color.a == 1)
                     SetTextFrameAlpha(0);
-                blockSkip = true;
                 DestroyChars();
             }
         }
@@ -408,7 +420,7 @@ public class TextManager : MonoBehaviour {
             int lines = textQueue[line].Text.Split('\n').Length;
             lines = lines >= 4 ? 4 : 3;
             Vector3 pos = gameObject.GetComponent<RectTransform>().localPosition;
-            MoveTo(pos.x, 22 + ((lines - 1) * Charset.LineSpacing / 2));
+            MoveTo(pos.x, 22 + ((lines - 1) * font.LineSpacing / 2));
         }
     }
 
@@ -460,7 +472,7 @@ public class TextManager : MonoBehaviour {
     private void SpawnTextSpaceTest(int i, string currentText, out string currentText2) {
         currentText2 = currentText;
         bool decorated = textQueue[currentLine].Decorated;
-        float decorationLength = decorated ? UnitaleUtil.CalcTextWidth(this, 0, 1, true, true) : 0;
+        float decorationLength = decorated ? UnitaleUtil.PredictTextWidth(this, 0, 1, true) : 0;
 
         // Gets the first character of the line and the last character after the current space
         int finalIndex = i + 1, beginIndex = i;
@@ -475,13 +487,13 @@ public class TextManager : MonoBehaviour {
         if (currentText[beginIndex] == '\n' || currentText[beginIndex] == '\r')                                   beginIndex++;
         if (currentText[finalIndex] == '\n' || currentText[finalIndex] == ' ' || currentText[finalIndex] == '\r') finalIndex--;
 
-        if (UnitaleUtil.CalcTextWidth(this, beginIndex, finalIndex, true) > _textMaxWidth && _textMaxWidth > 0) {
+        if (_textMaxWidth > 0 && UnitaleUtil.PredictTextWidth(this, beginIndex, finalIndex, true) > _textMaxWidth) {
             // If the line's too long, do something!
             int wordBeginIndex = currentText2[i] == ' ' ? i + 1 : i;
-            if (UnitaleUtil.CalcTextWidth(this, wordBeginIndex, finalIndex) > _textMaxWidth - decorationLength) {
+            if (UnitaleUtil.PredictTextWidth(this, wordBeginIndex, finalIndex) > _textMaxWidth - decorationLength) {
                 // Word is taking the entire line
                 for (int currentIndex = wordBeginIndex; currentIndex <= finalIndex; currentIndex++) {
-                    if (!(UnitaleUtil.CalcTextWidth(this, beginIndex, currentIndex) > _textMaxWidth)) continue;
+                    if (!(UnitaleUtil.PredictTextWidth(this, beginIndex, currentIndex) > _textMaxWidth)) continue;
                     currentText2                =  currentText2.Substring(0, currentIndex) + "\n" + (decorated ? "  " : "") + currentText2.Substring(currentIndex, currentText2.Length - currentIndex);
                     textQueue[currentLine].Text =  currentText2;
                     finalIndex                  += decorated ? 3 : 1;
@@ -505,10 +517,9 @@ public class TextManager : MonoBehaviour {
 
         Image ltrImg = singleLtr.GetComponent<Image>();
         ltrRect.SetParent(gameObject.transform);
-        ltrImg.sprite = Charset.Letters[currentText[index]];
+        ltrImg.sprite = font.Letters[currentText[index]];
 
-        letters.Add(new LetterData(index, ltrImg, Vector2.zero, commandColorSet, commandAlphaSet));
-        MoveLetter(currentText, letters.Count - 1);
+        letters.Add(new LetterData(index, ltrImg, font.Letters[currentText[index]], Vector2.zero, commandColorSet, commandAlphaSet));
 
         ltrImg.SetNativeSize();
 
@@ -532,39 +543,29 @@ public class TextManager : MonoBehaviour {
         LetterData letter = letters[letterIndex];
         RectTransform rt = letter.image.GetComponent<RectTransform>();
 
-        float letterShift = Charset.Letters[currentText[letter.index]].border.w - Charset.Letters[currentText[letter.index]].border.y;
-        float xScale = 1, yScale = 1;
-        float xPos = currentX, yPos = currentY;
+        float letterShift = letter.sprite.border.w - letter.sprite.border.y;
 
-        LuaTextManager luaThis = this as LuaTextManager;
-        if (luaThis && luaThis.adjustTextDisplay) {
-            xScale = luaThis.xscale;
-            yScale = luaThis.yscale;
-            xPos = Mathf.Round(xPos * xScale) / xScale;
-            yPos = Mathf.Round(yPos * yScale) / yScale;
-            letterShift = Mathf.Round(letterShift * xScale) / xScale;
-        }
-        xPos -= 0.01f;
-        yPos -= 0.01f;
+        LuaTextManager ltm = this as LuaTextManager;
+        if (ltm && ltm.adjustTextDisplay)
+            letterShift = Mathf.Round(letterShift * ltm.yscale) / ltm.yscale;
 
         if (GetType() == typeof(LuaTextManager) || gameObject.name == "TextParent" || gameObject.name == "ReviveText")
             // Allow Game Over fonts to enjoy the fixed text positioning, too!
-            rt.localPosition = new Vector3(xPos, yPos + letterShift, 0);
+            rt.localPosition = new Vector3(currentX, currentY + letterShift, 0);
         else
             // Keep what we already have for all text boxes that are not Text Objects in an encounter
-            rt.localPosition = new Vector3(xPos, yPos + (letterShift + 2), 0);
+            rt.localPosition = new Vector3(currentX, currentY + (letterShift + 2), 0);
 
         rt.eulerAngles = new Vector3(0, 0, rotation);
-        letters[letterIndex] = new LetterData(letter.index, letter.image, rt.anchoredPosition, letters[letterIndex].commandColorSet, letters[letterIndex].commandAlphaSet);
+        letters[letterIndex] = new LetterData(letter.index, letter.image, letter.sprite, rt.anchoredPosition, letters[letterIndex].commandColorSet, letters[letterIndex].commandAlphaSet);
     }
 
     protected virtual void SpawnText() {
         noSkip1stFrame = true;
         string currentText = textQueue[currentLine].Text;
         letters.Clear();
-        if (currentText.Length > 1)
-            if (!GlobalControls.isInFight || EnemyEncounter.script.GetVar("autolinebreak").Boolean || GetType() == typeof(LuaTextManager) && !((LuaTextManager)this).noAutoLineBreak)
-                SpawnTextSpaceTest(0, currentText, out currentText);
+        if (currentText.Length > 1 && GetAutoLineBreak())
+            SpawnTextSpaceTest(0, currentText, out currentText);
 
         // Work-around for [instant] and [instant:allowcommand] at the beginning of a line of text
         bool skipImmediate = false;
@@ -622,7 +623,7 @@ public class TextManager : MonoBehaviour {
                 case ' ':
                     if (i + 1 == currentText.Length || currentText[i + 1] == ' ')
                         break;
-                    if (!GlobalControls.isInFight || EnemyEncounter.script.GetVar("autolinebreak").Boolean || GetType() == typeof(LuaTextManager) && !((LuaTextManager)this).noAutoLineBreak) {
+                    if (GetAutoLineBreak()) {
                         SpawnTextSpaceTest(i, currentText, out currentText);
                         if (currentText[i] != ' ') {
                             i--;
@@ -632,12 +633,14 @@ public class TextManager : MonoBehaviour {
                     break;
             }
 
-            if (!Charset.Letters.ContainsKey(currentText[i]))
+            if (!font.Letters.ContainsKey(currentText[i]))
                 continue;
 
             CreateLetter(currentText, i);
         }
-
+        LuaTextManager ltm = this as LuaTextManager;
+        if (ltm && ltm.adjustTextDisplay)
+            ltm.Scale(ltm.xscale, ltm.yscale);
         MoveLetters();
 
         // Work-around for [instant] and [instant:allowcommand] at the beginning of a line of text
@@ -648,21 +651,58 @@ public class TextManager : MonoBehaviour {
             Update();
     }
 
-    protected void MoveLetters() {
+    private float[] ComputeTextSpacings() {
+        LuaTextManager ltm = this as LuaTextManager;
+        float normalizedHSpacing = hSpacing;
+        float normalizedVSpacing = vSpacing + font.LineSpacing;
+        if (ltm && ltm.adjustTextDisplay) {
+            float spaceHeight = font.Letters[' '].rect.height;
+
+            // Normalize shifts so they're integers
+            bool isNormalizedHSpacingPositive = normalizedHSpacing >= 0.001f;
+            normalizedHSpacing = Mathf.Round((normalizedHSpacing - 0.001f) * ltm.xscale);
+            if (isNormalizedHSpacingPositive)
+                normalizedHSpacing = Mathf.Max(1, normalizedHSpacing);
+            normalizedHSpacing /= ltm.xscale;
+
+            float relativeVSpacing = normalizedVSpacing - spaceHeight;
+            bool isRelativeVSpacingPositive = relativeVSpacing >= 0.001f;
+            relativeVSpacing = Mathf.Round((relativeVSpacing - 0.001f) * ltm.yscale);
+            if (isRelativeVSpacingPositive)
+                relativeVSpacing = Mathf.Max(1, relativeVSpacing);
+            relativeVSpacing /= ltm.yscale;
+            normalizedVSpacing = relativeVSpacing + spaceHeight;
+        }
+
+        return new float[] { normalizedHSpacing, normalizedVSpacing };
+    }
+
+    public void MoveLetters() {
+        ResetFont();
+
         float baseHSpacing = hSpacing;
         float baseVSpacing = vSpacing;
 
-        currentX = 0;
-        currentY = 0;
-        // allow Game Over fonts to enjoy the fixed text positioning, too!
-        if (!(this as LuaTextManager) && gameObject.name != "TextParent" && gameObject.name != "ReviveText")
-            currentY -= Charset.LineSpacing;
+        LuaTextManager ltm = this as LuaTextManager;
+        if (ltm && ltm.adjustTextDisplay) {
+            // Compute letter shift to align it to the integer position grid
+            float xPos = ltm.GetContainer().transform.position.x,
+                  yPos = ltm.GetContainer().transform.position.y;
+            currentX = (Mathf.Round(xPos) - xPos + 0.01f) / ltm.xscale;
+            currentY = (Mathf.Round(yPos) - yPos + 0.01f) / ltm.yscale;
+        } else {
+            currentX = 0.01f;
+            currentY = 0.01f;
+            // allow Game Over fonts to enjoy the fixed text positioning, too!
+            if (!ltm && gameObject.name != "TextParent" && gameObject.name != "ReviveText")
+                currentY -= font.LineSpacing;
+        }
         startingLineX = currentX;
         startingLineY = currentY;
 
-        LuaTextManager ltm = this as LuaTextManager;
-        float normalizedHSpacing = ltm != null && hSpacing > 0 ? Mathf.Max(1 / ltm.xscale, hSpacing) : hSpacing;
-        float normalizedVSpacing = (ltm != null ? ltm.yscale : 1) * vSpacing + Charset.LineSpacing;
+        float[] spacings = ComputeTextSpacings();
+        float normalizedHSpacing = spacings[0];
+        float normalizedVSpacing = spacings[1];
 
         string currentText = textQueue[currentLine].Text;
         int tabCount = 0;
@@ -671,10 +711,14 @@ public class TextManager : MonoBehaviour {
             switch (currentText[i]) {
                 case '[':
                     string command = UnitaleUtil.ParseCommandInline(currentText, ref i);
-                    if (command == null || !movementCommands.Contains(command))
+                    if (command == null || !movementCommands.Contains(command.Split(':')[0]))
                         i = currentChar;
-                    else
+                    else {
                         PreCreateControlCommand(command, true);
+                        spacings = ComputeTextSpacings();
+                        normalizedHSpacing = spacings[0];
+                        normalizedVSpacing = spacings[1];
+                    }
                     break;
                 case '\n':
                     currentX = startingLineX + normalizedVSpacing * Mathf.Sin(rotation * Mathf.Deg2Rad);
@@ -692,12 +736,38 @@ public class TextManager : MonoBehaviour {
                 MoveLetter(currentText, letters.IndexOf(letter));
                 RectTransform rt = letter.image.GetComponent<RectTransform>();
                 currentX += (rt.rect.width * rt.localScale.x + normalizedHSpacing) * Mathf.Cos(rotation * Mathf.Deg2Rad);
-                currentY += (rt.rect.width * rt.localScale.y + normalizedHSpacing) * Mathf.Sin(rotation * Mathf.Deg2Rad);
+                currentY += (rt.rect.width * rt.localScale.x + normalizedHSpacing) * Mathf.Sin(rotation * Mathf.Deg2Rad);
             }
         }
 
         hSpacing = baseHSpacing;
         vSpacing = baseVSpacing;
+    }
+
+    public void AlignLetters() {
+        LuaTextManager ltm = this as LuaTextManager;
+        if (!ltm || !ltm.adjustTextDisplay || ltm.xscale == 0 || ltm.yscale == 0 || letters.Count == 0 || !letters.Any(l => Mathf.Abs(l.image.GetComponent<RectTransform>().localPosition.x) < 1))
+            return;
+
+        LetterData letter = letters.Find(l => Mathf.Abs(l.image.GetComponent<RectTransform>().localPosition.x) < 1);
+        Vector2 positionBase = letter.image.GetComponent<RectTransform>().position;
+        Vector2 localPositionBase = letter.image.GetComponent<RectTransform>().localPosition;
+
+        float xShift = 0, yShift = 0;
+
+        float xDiff = Mathf.Abs(positionBase.x % 1 - 0.01f);
+        if (xDiff >= 0.001f)
+            xShift = -positionBase.x % 1 + 0.01f - Mathf.Round(localPositionBase.x - xDiff);
+
+        float yDiff = Mathf.Abs(positionBase.y % 1 - 0.01f);
+        if (yDiff >= 0.001f)
+            yShift = -positionBase.y % 1 + 0.01f - Mathf.Round(localPositionBase.y - yDiff);
+
+        if (xShift == 0 && yShift == 0)
+            return;
+
+        foreach (LetterData l in letters)
+            l.image.GetComponent<RectTransform>().localPosition += new Vector3(xShift / ltm.xscale, yShift / ltm.yscale);
     }
 
     private bool CheckCommand() {
@@ -762,14 +832,16 @@ public class TextManager : MonoBehaviour {
         if ((letterTimer >= timePerLetter || firstChar) && !LineComplete()) {
             int repeats = timePerLetter == 0f ? 1 : (int)Mathf.Floor(letterTimer / timePerLetter);
 
-            bool soundPlayed = false;
+            bool soundPlayed = firstChar && lettersToDisplay > 1;
             int lastLetter = -1;
 
             for (int i = 0; i < repeats; i++) {
-                if (!HandleShowLetter(ref soundPlayed, ref lastLetter)) {
+                if (lettersToDisplayOnce > 0)
                     HandleShowLettersOnce(ref soundPlayed, ref lastLetter);
-                    return;
-                }
+                else
+                    for (int j = 0; j < lettersToDisplay; j++)
+                        if (!HandleShowLetter(ref soundPlayed, ref lastLetter))
+                            break;
 
                 if (!firstChar)
                     letterTimer -= timePerLetter;
@@ -784,20 +856,24 @@ public class TextManager : MonoBehaviour {
     }
 
     private void HandleShowLettersOnce(ref bool soundPlayed, ref int lastLetter) {
-        while (letterOnceValue != 0 && !instantCommand) {
-            if (!HandleShowLetter(ref soundPlayed, ref lastLetter)) return;
-            letterOnceValue--;
+        while (lettersToDisplayOnce != 0 && !instantCommand) {
+            if (!HandleShowLetter(ref soundPlayed, ref lastLetter, true)) return;
+            lettersToDisplayOnce--;
         }
     }
 
-    private bool HandleShowLetter(ref bool soundPlayed, ref int lastLetter) {
+    private bool HandleShowLetter(ref bool soundPlayed, ref int lastLetter, bool fromOnce = false) {
         if (lastLetter != currentCharacter && ((!GlobalControls.retroMode && (!instantActive || instantCommand)) || GlobalControls.retroMode)) {
             float oldLetterTimer = letterTimer;
-            int oldLetterOnceValue = letterOnceValue;
+            int oldLettersToDisplay = lettersToDisplay;
+            int oldLettersToDisplayOnce = lettersToDisplayOnce;
             lastLetter = currentCharacter;
-            while (CheckCommand())
-                if ((GlobalControls.retroMode && instantActive) || letterTimer != oldLetterTimer || waitingChar != KeyCode.None || letterOnceValue != oldLetterOnceValue || paused)
+            while (CheckCommand()) {
+                if ((fromOnce && lettersToDisplayOnce != oldLettersToDisplayOnce) || (!fromOnce && lettersToDisplay != oldLettersToDisplay))
                     return false;
+                if ((GlobalControls.retroMode && instantActive) || letterTimer != oldLetterTimer || waitingChar != KeyCode.None || paused)
+                    return false;
+            }
             if (currentCharacter >= textQueue[currentLine].Text.Length)
                 return false;
         }
@@ -817,9 +893,10 @@ public class TextManager : MonoBehaviour {
             currentReferenceCharacter++;
         }
 
-        if (!string.IsNullOrEmpty(letterSound) && !muted && !soundPlayed && (GlobalControls.retroMode || textQueue[currentLine].Text[currentCharacter] != ' ')) {
+        if (!string.IsNullOrEmpty(GetVoice()) && !muted && !soundPlayed && (GlobalControls.retroMode || textQueue[currentLine].Text[currentCharacter] != ' ')) {
             soundPlayed = true;
-            UnitaleUtil.PlayVoice("BubbleSound", letterSound);
+            try { UnitaleUtil.PlayVoice("BubbleSound", GetVoice()); }
+            catch (CYFException e) { UnitaleUtil.DisplayLuaError("Playing a voice", e.Message); }
         }
 
         currentCharacter++;
@@ -829,7 +906,7 @@ public class TextManager : MonoBehaviour {
     private void PreCreateControlCommand(string command, bool movementCommand = false) {
         string[] cmds = UnitaleUtil.SpecialSplit(':', command);
         // Only allow letter movement commands on the letter movement pass
-        if (!movementCommand && movementCommands.Contains(command) || movementCommand && !movementCommands.Contains(command))
+        if (movementCommand && !movementCommands.Contains(cmds[0]))
             return;
         string[] args = new string[0];
         if (cmds.Length == 2) {
@@ -853,7 +930,7 @@ public class TextManager : MonoBehaviour {
                 break;
             case "charspacing":
                 try {
-                    if (cmds.Length > 1 && cmds[1].ToLower() == "default") SetHorizontalSpacing(Charset.CharSpacing);
+                    if (cmds.Length > 1 && cmds[1].ToLower() == "default") SetHorizontalSpacing(font.CharSpacing);
                     else                                                   SetHorizontalSpacing(ParseUtil.GetFloat(cmds[1]));
                 } catch (CYFException) {
                     Debug.LogError("[charspacing:x] usage - You used the value \"" + cmds[1] + "\" to set the text's horizontal spacing but it's not a valid number value.");
@@ -959,11 +1036,10 @@ public class TextManager : MonoBehaviour {
                 catch { Debug.LogError("[waitall:x] usage - You used the value \"" + cmds[1] + "\" to set the text's waiting time between letters, but it's not a valid integer value."); }
                 break;
 
-            case "novoice":     letterSound = null;                                            break;
+            case "novoice":     commandVoice = "none";                                         break;
             case "next":        autoSkipAll = true;                                            break;
             case "finished":    autoSkipThis = true;                                           break;
             case "nextthisnow": autoSkip = true;                                               break;
-            case "noskipatall": blockSkip = true;                                              break;
             case "speed":
                 try {
                     //you can only set text speed to a number >= 0
@@ -979,18 +1055,26 @@ public class TextManager : MonoBehaviour {
                 break;
 
             case "letters":
-                try { letterOnceValue = ParseUtil.GetInt(args[0]); }
-                catch { Debug.LogError("[letters:x] usage - You used the value \"" + args[0] + "\" to display a given amount of letters instantly, but it's not a valid integer value."); }
+                try {
+                    lettersToDisplayOnce = ParseUtil.GetInt(args[0]);
+                    firstChar = true;
+                    Update();
+                } catch { Debug.LogError("[letters:x] usage - You used the value \"" + args[0] + "\" to display a given amount of letters instantly, but it's not a valid integer value."); }
+                break;
+
+            case "lettersperframe":
+                try { lettersToDisplay = ParseUtil.GetInt(args[0]); }
+                catch { Debug.LogError("[lettersperframe:x] usage - You used the value \"" + args[0] + "\" to display a given amount of letters every frame, but it's not a valid integer value."); }
                 break;
 
             case "voice":
                 if (cmds[1].ToLower() != "default") {
                     try {
                         AudioClipRegistry.GetVoice(cmds[1].ToLower());
-                        letterSound = cmds[1].ToLower();
+                        commandVoice = cmds[1].ToLower();
                     } catch (InterpreterException) { UnitaleUtil.Warn("The voice file " + cmds[1].ToLower() + " doesn't exist. Note that all sound files use lowercase letters only.", false); }
                 } else
-                    letterSound = SpriteFontRegistry.UI_DEFAULT_NAME;
+                    commandVoice = null;
                 break;
 
             case "instant":
@@ -1231,6 +1315,9 @@ public class TextManager : MonoBehaviour {
 
     public virtual void MoveToAbs(float newX, float newY) {
         transform.position = new Vector3(Mathf.Round(newX), Mathf.Round(newY), transform.position.z);
+        LuaTextManager ltm = this as LuaTextManager;
+        if (ltm && ltm.adjustTextDisplay)
+            MoveLetters();
     }
 
     private float CreateNumber(string str) {

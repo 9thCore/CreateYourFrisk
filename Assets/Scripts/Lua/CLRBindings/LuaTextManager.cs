@@ -25,29 +25,39 @@ public class LuaTextManager : TextManager {
     [MoonSharpHidden] public bool autoSetLayer = true;
     private readonly Dictionary<string, DynValue> vars = new Dictionary<string, DynValue>();
     [MoonSharpHidden] public bool needFontReset = false;
-    [MoonSharpHidden] public bool noAutoLineBreak = false;
     [MoonSharpHidden] public bool isMainTextObject = false;
-    [MoonSharpHidden] public bool noSelfAdvance = false;
+
+    // Variables used to store text display adjustment variables
+    public Dictionary<int, float> xScaleSizes = new Dictionary<int, float>();
+    public Dictionary<int, float> yScaleSizes = new Dictionary<int, float>();
+    private float lastXScale = 1, lastYScale = 1;
 
     // Whether we correct the text's display (position, scale) to not look jagged
     private static bool globalAdjustTextPos {
         get {
-            if (GlobalControls.isInFight)
-                return EnemyEncounter.script.GetVar("adjusttextdisplay").Boolean;
-            return false;
+            if (!GlobalControls.isInFight)
+                return false;
+            if (EnemyEncounter.script.GetVar("noadjusttextdisplay").Type == DataType.Boolean)
+                return !EnemyEncounter.script.GetVar("noadjusttextdisplay").Boolean;
+            return true;
         }
     }
     private bool adjustTextDisplaySet = false;
-    private bool _adjustTextDisplay = false;
+    private bool _adjustTextDisplay = true;
     public bool adjustTextDisplay {
         get {
             if (adjustTextDisplaySet)
                 return _adjustTextDisplay;
+            if (rotation % 90 != 0)
+                return false;
             return globalAdjustTextPos;
         }
         set {
             adjustTextDisplaySet = true;
             _adjustTextDisplay = value;
+            if (!adjustTextDisplay)
+                foreach (LetterData l in letters)
+                    l.image.GetComponent<RectTransform>().localScale = Vector2.one;
             Move(0, 0);
             Scale(xscale, yscale);
         }
@@ -112,7 +122,7 @@ public class LuaTextManager : TextManager {
                 break;
             }
         }
-        if ((CanAutoSkipAll() && !noSelfAdvance) || CanAutoSkipThis())
+        if ((CanAutoSkipAll() || CanAutoSkipThis()) && (!UIController.instance || !UIController.instance.monsterDialogues.Contains(this)))
             NextLine();
         if (CanSkip() && !LineComplete() && GlobalControls.input.Cancel == UndertaleInput.ButtonState.PRESSED)
             DoSkipFromPlayer();
@@ -275,13 +285,10 @@ public class LuaTextManager : TextManager {
         yScale = ys;
 
         container.transform.localScale = new Vector2(xs, ys);
-        if (adjustTextDisplay)
+        if (adjustTextDisplay) {
             PostScaleHandling();
-        else
-            foreach (LetterData l in letters)
-                l.image.GetComponent<RectTransform>().localScale = Vector2.one;
-
-        MoveLetters();
+            MoveLetters();
+        }
     }
 
     public string layer {
@@ -408,9 +415,11 @@ public class LuaTextManager : TextManager {
             CheckExists();
             _color.a = Mathf.Clamp01(value);
             textAlphaSet = true;
+            textColorSet = true; // TODO: Remove in 0.7
 
             foreach (LetterData l in letters.Where(i => !i.commandAlphaSet))
-                l.image.color = new Color(l.image.color.r, l.image.color.g, l.image.color.b, _color.a);
+                //l.image.color = new Color(l.image.color.r, l.image.color.g, l.image.color.b, _color.a); // TODO: Remove in 0.7
+                l.image.color = _color;
 
             if (!commandAlphaSet)
                 commandColor.a = _color.a;
@@ -689,18 +698,35 @@ public class LuaTextManager : TextManager {
                 ResizeBubble();
         }
     }
-
     private void PostScaleHandling() {
         if (xscale == 0 || yscale == 0)
             return;
+
+        if (xscale != lastXScale) xScaleSizes.Clear();
+        if (yscale != lastYScale) yScaleSizes.Clear();
+
         foreach (LetterData l in letters) {
             RectTransform r = l.image.GetComponent<RectTransform>();
-            float newXSize = r.rect.width * xscale,
-                  newYSize = r.rect.height * yscale,
-                  chosenX = newXSize % 1 == 0.5 ? newXSize : Mathf.Round(newXSize),
-                  chosenY = newYSize % 1 == 0.5 ? newYSize : Mathf.Round(newYSize),
-                  xLocalScale = chosenX / newXSize,
-                  yLocalScale = chosenY / newYSize;
+
+            float xLocalScale;
+            if (xScaleSizes.ContainsKey(Mathf.RoundToInt(r.rect.width)))
+                xLocalScale = xScaleSizes[Mathf.RoundToInt(r.rect.width)];
+            else {
+                float newXSize = r.rect.width * xscale,
+                      chosenX = Mathf.Round(newXSize - 0.001f);
+                xLocalScale = chosenX / newXSize;
+                xScaleSizes[Mathf.RoundToInt(r.rect.width)] = xLocalScale;
+            }
+
+            float yLocalScale;
+            if (yScaleSizes.ContainsKey(Mathf.RoundToInt(r.rect.height)))
+                yLocalScale = yScaleSizes[Mathf.RoundToInt(r.rect.height)];
+            else {
+                float newYSize = r.rect.height * yscale,
+                      chosenY = Mathf.Round(newYSize - 0.001f);
+                yLocalScale = chosenY / newYSize;
+                yScaleSizes[Mathf.RoundToInt(r.rect.height)] = yLocalScale;
+            }
             r.localScale = new Vector2(xLocalScale, yLocalScale);
         }
     }
@@ -733,14 +759,32 @@ public class LuaTextManager : TextManager {
         container.GetComponent<RectTransform>().anchorMax = new Vector2(newX, newY);
     }
 
-    public int GetTextWidth() {
+    public int GetTextWidth(int firstLetter = 0, int lastLetter = 999999) {
         CheckExists();
-        return (int)UnitaleUtil.CalcTextWidth(this);
+        if (textQueue == null || textQueue[currentLine] == null)
+            return 0;
+
+        if (firstLetter < 0) firstLetter += textQueue[currentLine].Text.Length - 1;
+        if (lastLetter < 0) lastLetter += textQueue[currentLine].Text.Length - 1;
+
+        if (firstLetter >= textQueue[currentLine].Text.Length) firstLetter = textQueue[currentLine].Text.Length - 1;
+        if (lastLetter >= textQueue[currentLine].Text.Length) lastLetter = textQueue[currentLine].Text.Length - 1;
+
+        return (int)UnitaleUtil.CalcTextWidth(this, firstLetter, lastLetter);
     }
 
-    public int GetTextHeight() {
+    public int GetTextHeight(int firstLetter = 0, int lastLetter = 999999) {
         CheckExists();
-        return (int)UnitaleUtil.CalcTextHeight(this);
+        if (textQueue == null || textQueue[currentLine] == null)
+            return 0;
+
+        if (firstLetter < 0) firstLetter += textQueue[currentLine].Text.Length;
+        if (lastLetter < 0) lastLetter += textQueue[currentLine].Text.Length;
+
+        if (firstLetter >= textQueue[currentLine].Text.Length) firstLetter = textQueue[currentLine].Text.Length - 1;
+        if (lastLetter >= textQueue[currentLine].Text.Length) lastLetter = textQueue[currentLine].Text.Length - 1;
+
+        return (int)UnitaleUtil.CalcTextHeight(this, firstLetter, lastLetter);
     }
 
     public void SetVar(string key, DynValue value) {

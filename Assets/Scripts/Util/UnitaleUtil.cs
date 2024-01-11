@@ -190,8 +190,18 @@ public static class UnitaleUtil {
         return null;
     }
 
-    public static float CalcTextWidth(TextManager txtmgr, int fromLetter = -1, int toLetter = -1, bool countEOLSpace = false, bool getLastSpace = false) {
-        float totalWidth = 0, totalWidthSpaceTest = 0, totalMaxWidth = 0, hSpacing = txtmgr.Charset.CharSpacing;
+    /// <summary>
+    /// Predicts the length of the text using the letters' size and various tags.
+    /// </summary>
+    /// <param name="txtmgr">Text object</param>
+    /// <param name="fromLetter">Letter of the current line of text to count from</param>
+    /// <param name="toLetter">Letter of the current line of text to count to</param>
+    /// <param name="countEOLSpace">True if we count spaces (spaces are usually skipped)</param>
+    /// <param name="getLastSpace">True if we count the letter spacing after the last letter of the text</param>
+    /// <returns>The length of the text in pixels</returns>
+    public static float PredictTextWidth(TextManager txtmgr, int fromLetter = -1, int toLetter = -1, bool countEOLSpace = false) {
+        float totalWidth = 0, totalWidthSpaceTest = 0, totalMaxWidth = 0, hSpacing = txtmgr.font.CharSpacing, columns = 0;
+        List<float> columnsMaxWidth = new List<float>();
         if (fromLetter == -1)                                                                                       fromLetter = 0;
         if (txtmgr.textQueue == null)                                                                               return 0;
         if (txtmgr.textQueue[txtmgr.currentLine] == null)                                                           return 0;
@@ -203,21 +213,33 @@ public static class UnitaleUtil {
                 case '[':
                     string str = ParseCommandInline(txtmgr.textQueue[txtmgr.currentLine].Text, ref i);
                     if (str == null) {
-                        if (txtmgr.Charset.Letters.ContainsKey(txtmgr.textQueue[txtmgr.currentLine].Text[i]))
-                            totalWidth += txtmgr.Charset.Letters[txtmgr.textQueue[txtmgr.currentLine].Text[i]].textureRect.size.x + hSpacing;
+                        if (txtmgr.font.Letters.ContainsKey(txtmgr.textQueue[txtmgr.currentLine].Text[i]))
+                            totalWidth += txtmgr.font.Letters[txtmgr.textQueue[txtmgr.currentLine].Text[i]].textureRect.size.x + hSpacing;
                     } else if (str.Split(':')[0] == "charspacing")
-                        hSpacing = str.Split(':')[1].ToLower() == "default" ? txtmgr.Charset.CharSpacing : ParseUtil.GetFloat(str.Split(':')[1]);
+                        hSpacing = str.Split(':')[1].ToLower() == "default" ? txtmgr.font.CharSpacing : ParseUtil.GetFloat(str.Split(':')[1]);
+                    break;
+                case '\t':
+                    // Add columns if they're not empty or filled with spaces
+                    if (totalWidthSpaceTest == totalWidth)
+                        columnsMaxWidth.Add(totalWidth);
+                    totalWidth = txtmgr.columnShift * ++columns;
+                    if (countEOLSpace)
+                        totalWidthSpaceTest = totalWidth;
                     break;
                 case '\r':
                 case '\n':
+                    columns = 0;
+                    columnsMaxWidth.Add(totalWidthSpaceTest);
+                    totalWidthSpaceTest = columnsMaxWidth.Max(w => w);
                     totalMaxWidth = Mathf.Max(totalMaxWidth, totalWidthSpaceTest - hSpacing);
                     totalWidth = 0;
                     totalWidthSpaceTest = 0;
+                    columnsMaxWidth.Clear();
                     break;
                 default:
-                    if (txtmgr.Charset.Letters.ContainsKey(txtmgr.textQueue[txtmgr.currentLine].Text[i])) {
-                        totalWidth += txtmgr.Charset.Letters[txtmgr.textQueue[txtmgr.currentLine].Text[i]].textureRect.size.x + hSpacing;
-                        // Do not count end of line spaces
+                    if (txtmgr.font.Letters.ContainsKey(txtmgr.textQueue[txtmgr.currentLine].Text[i])) {
+                        totalWidth += txtmgr.font.Letters[txtmgr.textQueue[txtmgr.currentLine].Text[i]].textureRect.size.x + hSpacing;
+                        // Do not count spaces
                         if (txtmgr.textQueue[txtmgr.currentLine].Text[i] != ' ' || countEOLSpace)
                             totalWidthSpaceTest = totalWidth;
                     }
@@ -225,24 +247,70 @@ public static class UnitaleUtil {
             }
         }
         totalMaxWidth = Mathf.Max(totalMaxWidth, totalWidthSpaceTest - hSpacing);
-        return Mathf.Max(totalMaxWidth + (getLastSpace ? hSpacing : 0), 0);
+        return Mathf.Max(totalMaxWidth, 0);
     }
 
-    public static float CalcTextHeight(TextManager txtmgr, int fromLetter = -1, int toLetter = -1) {
-        float maxY = Mathf.NegativeInfinity, minY = Mathf.Infinity;
+    /// <summary>
+    /// Computes the text's width using the x position of all of the text's letters.
+    /// This function assumes the text's letters have been created.
+    /// </summary>
+    /// <param name="txtmgr">Text object</param>
+    /// <param name="fromLetter">Letter of the current line of text to count from</param>
+    /// <param name="toLetter">Letter of the current line of text to count to</param>
+    /// <param name="countEOLSpace">True if we count spaces (spaces are usually skipped)</param>
+    /// <returns>The length of the text in pixels</returns>
+    public static float CalcTextWidth(TextManager txtmgr, int fromLetter = -1, int toLetter = -1, bool countEOLSpace = false) {
+        if (txtmgr.textQueue == null || txtmgr.textQueue[txtmgr.currentLine] == null)                                return 0;
+        if (fromLetter > toLetter || fromLetter < -1 || toLetter > txtmgr.textQueue[txtmgr.currentLine].Text.Length) return 0;
+        if (fromLetter == -1)                                                                                        fromLetter = 0;
+        if (toLetter == -1)                                                                                          toLetter = txtmgr.textQueue[txtmgr.currentLine].Text.Length - 1;
 
-        if (fromLetter == -1) fromLetter = 0;
-        if (toLetter == -1)   toLetter = txtmgr.textQueue[txtmgr.currentLine].Text.Length;
-        if (fromLetter > toLetter || fromLetter < 0 || toLetter > txtmgr.textQueue[txtmgr.currentLine].Text.Length) return -1;
-        if (fromLetter == toLetter)                                                                                 return 0;
+        float maxX = Mathf.NegativeInfinity, minX = Mathf.Infinity;
+        LuaTextManager ltm = txtmgr as LuaTextManager;
 
-        for (int i = 0; i < txtmgr.letters.Count; i++) {
-            TextManager.LetterData l = txtmgr.letters[i];
-            if (l.index < fromLetter || l.index > toLetter) continue;
-            minY = Mathf.Min(minY, l.position.y);
-            maxY = Mathf.Max(maxY, l.position.y + txtmgr.Charset.Letters[txtmgr.textQueue[txtmgr.currentLine].Text[l.index]].textureRect.size.y);
+        // Add text pos in case of tab
+        if (fromLetter == 0) {
+            minX = Mathf.Min(minX, ltm.absx);
+            maxX = Mathf.Max(maxX, ltm.absx);
         }
-        return Mathf.Max(maxY - minY, 0);
+
+        for (int i = fromLetter; i <= toLetter; i++) {
+            if (!txtmgr.letters.Any(l => l.index == i))
+                continue;
+            if (txtmgr.textQueue[txtmgr.currentLine].Text[i] == ' ' && !countEOLSpace)
+                continue;
+
+            TextManager.LetterData letter = txtmgr.letters.Find(l => l.index == i);
+            float letterPosMin = letter.image.rectTransform.position.x,
+                  letterPosMax = letter.image.rectTransform.position.x + letter.image.rectTransform.rect.width * letter.image.rectTransform.localScale.x;
+            minX = Mathf.Min(minX, letterPosMin, letterPosMax);
+            maxX = Mathf.Max(maxX, letterPosMin, letterPosMax);
+        }
+        return Mathf.Max(maxX - minX, 0) / (ltm ? ltm.xscale : 1);
+    }
+
+    public static float CalcTextHeight(TextManager txtmgr, int fromLetter = -1, int toLetter = -1, bool countEOLSpace = false) {
+        if (txtmgr.textQueue == null || txtmgr.textQueue[txtmgr.currentLine] == null)                               return 0;
+        if (fromLetter == -1)                                                                                       fromLetter = 0;
+        if (toLetter == -1)                                                                                         toLetter = txtmgr.textQueue[txtmgr.currentLine].Text.Length - 1;
+        if (fromLetter > toLetter || fromLetter < 0 || toLetter > txtmgr.textQueue[txtmgr.currentLine].Text.Length) return 0;
+
+        float maxY = Mathf.NegativeInfinity, minY = Mathf.Infinity;
+        LuaTextManager ltm = txtmgr as LuaTextManager;
+
+        for (int i = fromLetter; i <= toLetter; i++) {
+            if (!txtmgr.letters.Any(l => l.index == i))
+                continue;
+            if (txtmgr.textQueue[txtmgr.currentLine].Text[i] == ' ' && !countEOLSpace)
+                continue;
+
+            TextManager.LetterData letter = txtmgr.letters.Find(l => l.index == i);
+            float letterPosMin = letter.image.rectTransform.position.y,
+                  letterPosMax = letter.image.rectTransform.position.y + letter.image.rectTransform.rect.height * letter.image.rectTransform.localScale.y;
+            minY = Mathf.Min(minY, letterPosMin, letterPosMax);
+            maxY = Mathf.Max(maxY, letterPosMin, letterPosMax);
+        }
+        return Mathf.Max(maxY - minY, 0) / (ltm ? ltm.yscale : 1);
     }
 
     public static DynValue RebuildTableFromString(string text) {
@@ -675,7 +743,7 @@ public static class UnitaleUtil {
     public static bool TryCall(ScriptWrapper script, string func, DynValue[] param = null) {
         DynValue sval = script.GetVar(func);
         script.Call(func, param);
-        return (sval.Type & (DataType.Function | DataType.ClrFunction)) == 0;
+        return (sval.Type & (DataType.Function | DataType.ClrFunction)) != 0;
     }
 
     public static int SelectionChoice(int items, int current, int xMov, int yMov, int rows, int columns, bool verticalRollaround = true) {
@@ -734,6 +802,13 @@ public static class UnitaleUtil {
             result = items - 1;
 
         return result;
+    }
+
+    public static void TextObjectMoveChecker(Transform t) {
+        LuaTextManager[] ltms = t.GetComponentsInChildren<LuaTextManager>();
+        foreach (LuaTextManager ltm in ltms)
+            if (ltm.transform != t && ltm.adjustTextDisplay)
+                ltm.AlignLetters();
     }
 
     public static Transform GetTransform(object o) {

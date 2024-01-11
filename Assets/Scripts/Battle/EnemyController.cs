@@ -240,6 +240,38 @@ public class EnemyController : MonoBehaviour {
         set { script.SetVar("noattackmisstext", DynValue.NewString(value)); }
     }
 
+    public Color SpareColor {
+        get {
+            DynValue spareColor = script.GetVar("sparecolor");
+            DynValue spareColor32 = script.GetVar("sparecolor32");
+            DynValue val = spareColor.IsNotNil() ? spareColor : spareColor32;
+            if (val.IsNil())
+                return new Color(1, 1, 0, 1);
+
+            if (val.Type != DataType.Table)
+                throw new CYFException("An enemy's spare color must be a table with 3 or 4 numbers: type is " + val.Type.ToString() + ".");
+
+            Table tab = val.Table;
+            if (tab.Length < 3 || tab.Length > 4)
+                throw new CYFException("An enemy's spare color must be a table with 3 or 4 numbers: the table has " + tab.Length + " elements.");
+
+            foreach (TablePair p in tab.Pairs) {
+                if (p.Key.Type != DataType.Number)
+                    throw new CYFException("An enemy's spare color must be a table with 3 or 4 numbers: the table's " + p.Key.ToString() + " value doesn't have a numbered key.");
+                if (p.Value.Type != DataType.Number)
+                    throw new CYFException("An enemy's spare color must be a table with 3 or 4 numbers: the table's " + p.Key.ToString() + " value is of type " + p.Value.Type.ToString() + ".");
+            }
+
+            bool is32 = spareColor.IsNil();
+            return new Color(
+                Mathf.Clamp01((float)tab.Get(1).Number / (is32 ? 255 : 1)),
+                Mathf.Clamp01((float)tab.Get(2).Number / (is32 ? 255 : 1)),
+                Mathf.Clamp01((float)tab.Get(3).Number / (is32 ? 255 : 1)),
+                tab.Get(4).Type == DataType.Nil ? 1 : Mathf.Clamp01((float)tab.Get(4).Number / (is32 ? 255 : 1))
+            );
+        }
+    }
+
     public float PosX {
         get { return GetComponent<RectTransform>().position.x; }
     }
@@ -391,17 +423,20 @@ public class EnemyController : MonoBehaviour {
         // Bubble management: can be a normal bubble OR an auto bubble from text objects
         if (!usingAutoBubble) {
             try { SpriteUtil.SwapSpriteFromFile(speechBubImg, DialogBubble, enemyID); }
-            catch {
-                UnitaleUtil.DisplayLuaError(scriptName + ": Creating a dialogue bubble", "The dialogue bubble \"" + script.GetVar("dialogbubble") + "\" doesn't exist.");
+            catch (Exception e) {
+                UnitaleUtil.DisplayLuaError(scriptName + ": Creating a dialogue bubble", "An error was encountered. It's highly possible the dialogue bubble " + script.GetVar("dialogbubble") + " doesn't exist.\n\nError: " + e.Message);
                 return;
             }
             Sprite speechBubSpr = speechBubImg.sprite;
 
             float xMov = speechBubSpr.border.x;
-            float yMov = -speechBubSpr.border.w - sbTextMan.Charset.LineSpacing;
+            float yMov = -speechBubSpr.border.w - sbTextMan.font.LineSpacing;
             float angle = sbTextMan.rotation * Mathf.Deg2Rad;
             sbTextMan.MoveTo((int)(Mathf.Cos(angle) * xMov - Mathf.Sin(angle) * yMov), (int)(Mathf.Sin(angle) * xMov + Mathf.Cos(angle) * yMov));
             speechBubImg.color = new Color(speechBubImg.color.r, speechBubImg.color.g, speechBubImg.color.b, sbTextMan.letters.Count == 0 ? 0 : 1);
+
+            if (bubbleWidth == 0)
+                bubbleWidth = speechBubSpr.textureRect.width - speechBubSpr.border.x - speechBubSpr.border.z;
 
             sbTextMan.HideBubble();
         } else {
@@ -416,14 +451,14 @@ public class EnemyController : MonoBehaviour {
             sbTextMan.MoveTo(0, 0);
         }
 
-        sbTextMan.textMaxWidth = (int)bubbleWidth;
+        sbTextMan._textMaxWidth = (int)bubbleWidth;
         speechBubImg.transform.SetAsLastSibling();
 
         bubbleObject.GetComponent<RectTransform>().anchoredPosition = DialogBubblePosition + offsets[1];
         sbTextMan.Move(0, 0); // Used to even out the text object's position so it's only using integers
 
         if (Voice != "")
-            sbTextMan.letterSound = Voice;
+            sbTextMan.fontVoice = Voice;
     }
 
     public void HideBubble() {
