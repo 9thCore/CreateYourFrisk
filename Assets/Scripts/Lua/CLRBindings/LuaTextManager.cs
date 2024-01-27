@@ -108,7 +108,7 @@ public class LuaTextManager : TextManager {
         //Next line/EOF check
         switch (progress) {
             case ProgressMode.MANUAL: {
-                if (GlobalControls.input.Confirm == UndertaleInput.ButtonState.PRESSED && LineComplete())
+                if (GlobalControls.input.Confirm == ButtonState.PRESSED && LineComplete())
                     NextLine();
                 break;
             }
@@ -124,7 +124,7 @@ public class LuaTextManager : TextManager {
         }
         if ((CanAutoSkipAll() || CanAutoSkipThis()) && (!UIController.instance || !UIController.instance.monsterDialogues.Contains(this)))
             NextLine();
-        if (CanSkip() && !LineComplete() && GlobalControls.input.Cancel == UndertaleInput.ButtonState.PRESSED)
+        if (CanSkip() && !LineComplete() && GlobalControls.input.Cancel == ButtonState.PRESSED)
             DoSkipFromPlayer();
     }
 
@@ -770,6 +770,8 @@ public class LuaTextManager : TextManager {
         if (firstLetter >= textQueue[currentLine].Text.Length) firstLetter = textQueue[currentLine].Text.Length - 1;
         if (lastLetter >= textQueue[currentLine].Text.Length) lastLetter = textQueue[currentLine].Text.Length - 1;
 
+        if (letters.Count == 0)
+            return (int)UnitaleUtil.PredictTextWidth(this, firstLetter, lastLetter);
         return (int)UnitaleUtil.CalcTextWidth(this, firstLetter, lastLetter);
     }
 
@@ -784,6 +786,7 @@ public class LuaTextManager : TextManager {
         if (firstLetter >= textQueue[currentLine].Text.Length) firstLetter = textQueue[currentLine].Text.Length - 1;
         if (lastLetter >= textQueue[currentLine].Text.Length) lastLetter = textQueue[currentLine].Text.Length - 1;
 
+        // TODO: Add text height prediction if not yet set
         return (int)UnitaleUtil.CalcTextHeight(this, firstLetter, lastLetter);
     }
 

@@ -240,7 +240,8 @@ it's w3c valid, at least
                 The wait command. Pauses your textbox temporarily based on the number you enter.
                 <br><br>
                 Technically: This will pause the textbox for <span class="term">x * 4</span> in-game frames.<br>
-                Calling <span class="term">[w:1]</span> will freeze the textbox for 4 in-game frames.<br>
+                Calling <span class="term">[w:1]</span> will freeze the textbox for 4 in-game frames.
+                <br><br>
                 <span class="term">[w:4]</span> is 16 in-game frames, <span class="term">[w:10]</span> is 40, and so on.
             </p>
 
@@ -259,14 +260,17 @@ it's w3c valid, at least
                 Sets the voice (sound per letter) to a sound located in <span class="term">YOUR MOD/Sounds/Voices</span>. Applies to all letters
                 after the command. It resets per dialogue. This has to be a .wav file, and you shouldn't include the
                 file extension when using <span class="term">[voice]</span>. If your voice sound is <span class="term">YOUR MOD/Sounds/Voices/mettaton.wav</span>, you can
-                use it with <span class="term">[voice:mettaton]</span>.<br>
+                use it with <span class="term">[voice:mettaton]</span>.
+                <br><br>
                 <span class="term">[voice:default]</span> resets to the default voice (beeps). If you have a voice sound named 'default', it will
                 be ignored.</p>
 
             <p class="exblock">
                 <br><span class="function">[novoice]</span>
                 Removes the voice for the letters after this command. It resets per dialogue.
-                <span style="color:#000">Useful for when you should be burning in hell.</span>
+                <span style="color:#000">Useful for when you should be burning in hell.</span></p>
+
+            <p class="exblock">
                 <br><span class="function">[next]</span>
                 Skips to the next dialogue of all monsters automatically, without concern for the other monsters' dialogue's state.
                 You can also use this for textbox trickery. Here's an example to replicate Flowey's text-changing effect if you dodge
@@ -293,6 +297,9 @@ second line: "[instant][effect:none]RUN. INTO. THE.\nfriendliness\npellets"</pre
                 <br><span class="function"><span class="CYF"></span> [waitfor:key]</span>
                 Waits for the user to press the given key to continue the message.
                 Check the <span class="ref">Key List</span> to see the available keys.
+                <br><br>
+                <font style='color: #fff;'>* Note that keybinds are also accepted here.
+                For more info, check the page on <span class="ref">The Input Object</span></font>
             </p>
 
             <p class="exblock">
@@ -339,7 +346,8 @@ end</pre>
             <p class="exblock">
             <br><span class="function"><span class="CYF"></span> [letters:x]</span>
                 For this frame only, the text box will show the next x characters.
-                <br><span class="new"></span>If used with the command <span class="term">[lettersperframe:y]</span>, the next <span class="term">x+y-1</span> letters will be displayed.
+                <br><span class="new"></span>If used with the command <span class="term">[lettersperframe:y]</span>, the next <span class="term">x+y-1</span>
+                letters will be displayed.
             </p>
 
             <p class="exblock">
@@ -390,8 +398,8 @@ end</pre>
                 <br><br>
                 If you do not provide a time, or the time you enter is lower than 0, a default value of <span class="term">0.2</span> will be used.
                 <br><br>
-                <span class="new"></span><u>NOTE:</u> While the overworld's mugshots have a size of 140x140, in battles, the mugshots are 130x130, so if bigger mugshots are applied in
-                battles, 5 pixels around each edge are hidden.
+                <span class="new"></span><u>NOTE:</u> While the overworld's mugshots have a size of 140x140, in battles, the mugshots are 130x130, so if bigger
+                mugshots are applied in battles, 5 pixels around each edge are hidden.
             </p>
 
             <p class="exblock">
@@ -430,17 +438,15 @@ end</pre>
 
             <p class="exblock">
                 <br><span class="function">skipover</span>
-                Makes a command only be activated when the text is not skipped (by using any <span class="term">[instant]</span> command or the
-                player's skip if <span class="term">playerskipdocommand</span> is set to true). Has no effect on <span class="term">[w]</span> and
-                <span class="term">[letters]</span>.
+                Makes a command only be activated when the text is not skipped (by using any <span class="term">[instant]</span> command or by the
+                player skipping). Has no effect on the commands <span class="term">[w]</span> and <span class="term">[letters]</span>.
             </p>
 
             <p class="exblock">
                 <br><span class="function">skiponly</span>
-                The command this is attached to will only be activated if the text has been skipped by using any
-                <span class="term">[instant]</span> command, or if the player skips it manually and
-                <span class="term">playerskipdocommand</span> is set to true.
-                This tag disables the <span class="term">[w]</span> and <span class="term">[letters]</span> commands if used on them.
+                The command this is attached to will only be activated if the text has been skipped by using any <span class="term">[instant]</span>
+                command, or if the player skips it manually.
+                This tag disables the commands <span class="term">[w]</span> and <span class="term">[letters]</span> if used with them.
             </p>
         </div>
 

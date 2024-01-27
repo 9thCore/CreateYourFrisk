@@ -80,6 +80,7 @@ public class TextManager : MonoBehaviour {
     private int lettersToDisplay;
     private int lettersToDisplayOnce;
     private KeyCode waitingChar = KeyCode.None;
+    private string waitingKeybind = null;
 
     protected Color commandColor = Color.white;
     protected Color defaultColor = Color.white;
@@ -141,13 +142,10 @@ public class TextManager : MonoBehaviour {
 
     [MoonSharpHidden] public void SetCaller(ScriptWrapper s) { caller = s; }
 
-    public void SetFont(UnderFont font, bool temporary = false) {
+    public void SetFont(UnderFont font) {
         this.font = font;
-        if (!temporary) {
-            defaultFont = font;
-            defaultVoice = font.SoundName;
-        } else if (font.Sound != null)
-            fontVoice = font.SoundName;
+        defaultFont = font;
+        defaultVoice = font.SoundName;
 
         if (defaultFont == null)
             defaultFont = font;
@@ -822,10 +820,12 @@ public class TextManager : MonoBehaviour {
             return;
 
         if (waitingChar != KeyCode.None) {
-            if (Input.GetKeyDown(waitingChar))
-                waitingChar = KeyCode.None;
-            else
-                return;
+            if (Input.GetKeyDown(waitingChar)) waitingChar = KeyCode.None;
+            else                               return;
+        }
+        if (waitingKeybind != null) {
+            if (KeyboardInput.StateFor(waitingKeybind) == ButtonState.PRESSED) waitingKeybind = null;
+            else                                                               return;
         }
 
         letterTimer += Time.deltaTime;
@@ -863,7 +863,7 @@ public class TextManager : MonoBehaviour {
     }
 
     private bool HandleShowLetter(ref bool soundPlayed, ref int lastLetter, bool fromOnce = false) {
-        if (lastLetter != currentCharacter && ((!GlobalControls.retroMode && (!instantActive || instantCommand)) || GlobalControls.retroMode)) {
+        if (lastLetter != currentCharacter) {
             float oldLetterTimer = letterTimer;
             int oldLettersToDisplay = lettersToDisplay;
             int oldLettersToDisplayOnce = lettersToDisplayOnce;
@@ -974,7 +974,7 @@ public class TextManager : MonoBehaviour {
                     UnitaleUtil.DisplayLuaError("", "[font:x] usage - The font \"" + cmds[1] + "\" doesn't exist.\nYou should check if you made a typo, or if the font really is in your mod.", true);
                     break;
                 }
-                SetFont(uf, true);
+                SetFont(uf);
                 if (GetType() == typeof(LuaTextManager) && ((LuaTextManager)this).bubble)
                     ((LuaTextManager) this).UpdateBubble();
                 break;
@@ -1005,15 +1005,15 @@ public class TextManager : MonoBehaviour {
     private void InUpdateControlCommand(DynValue command, int index = 0) {
         string[] cmds = UnitaleUtil.SpecialSplit(':', command.String);
         string[] args = new string[0];
-        if (cmds.Length >= 2) {
-            if (cmds.Length == 3) {
-                if (cmds[2] == "skipover" && instantCommand) return;
-                if (cmds[2] == "skiponly" && !instantCommand) return;
-            } else if (cmds[1] == "skipover" && instantCommand) return;
-            else if (cmds[1] == "skiponly" && !instantCommand) return;
+        if (cmds.Length > 1) {
             args = UnitaleUtil.SpecialSplit(',', cmds[1], true);
             cmds[1] = args[0];
         }
+
+        string tag = cmds[cmds.Length - 1];
+        if (tag == "skipover" && instantActive) return;
+        if (tag == "skiponly" && !instantActive) return;
+
         // TODO: Restore errors for 0.7
         switch (cmds[0].ToLower()) {
             case "noskip":
@@ -1022,8 +1022,14 @@ public class TextManager : MonoBehaviour {
                 break;
 
             case "waitfor":
-                try { waitingChar = (KeyCode)Enum.Parse(typeof(KeyCode), cmds[1]); }
-                catch { Debug.LogError("[waitfor:x] usage - The key \"" + cmds[1] + "\" isn't a valid key."); }
+                try {
+                    if (KeyboardInput.KeybindExists(cmds[1])) {
+                        waitingKeybind = cmds[1];
+                        return;
+                    }
+                    waitingChar = (KeyCode)Enum.Parse(typeof(KeyCode), cmds[1]);
+                }
+                catch { Debug.LogError("[waitfor:x] usage - The key \"" + cmds[1] + "\" is neither a valid key or a known keybind."); }
                 break;
 
             case "w":
@@ -1036,10 +1042,10 @@ public class TextManager : MonoBehaviour {
                 catch { Debug.LogError("[waitall:x] usage - You used the value \"" + cmds[1] + "\" to set the text's waiting time between letters, but it's not a valid integer value."); }
                 break;
 
-            case "novoice":     commandVoice = "none";                                         break;
-            case "next":        autoSkipAll = true;                                            break;
-            case "finished":    autoSkipThis = true;                                           break;
-            case "nextthisnow": autoSkip = true;                                               break;
+            case "novoice":     commandVoice = "none"; break;
+            case "next":        autoSkipAll = true;    break;
+            case "finished":    autoSkipThis = true;   break;
+            case "nextthisnow": autoSkip = true;       break;
             case "speed":
                 try {
                     //you can only set text speed to a number >= 0
