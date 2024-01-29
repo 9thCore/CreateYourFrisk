@@ -21,9 +21,15 @@ public class LuaInputBinding {
     public int Left    { get { return (int)input.Left;    } }
     public int Right   { get { return (int)input.Right;   } }
 
-    public int GetKey(string Key) {
-        try { return (int)input.Key(Key); }
-        catch (Exception e) { throw new CYFException("Input.GetKey(): The key \"" + Key + "\" doesn't exist.\n\n" + e.Message); }
+    public int GetKey(string key) {
+        try { return (int)input.Key(key); }
+        catch { throw new CYFException("Input.GetKey(): The key \"" + key + "\" doesn't exist."); }
+    }
+
+    public float GetAxisRaw(string axis) {
+        if (!KeyboardInput.axes.ContainsKey(axis))
+            throw new CYFException("Input.GetAxisRaw(): The axis \"" + axis + "\" doesn't exist.");
+        return Input.GetAxisRaw(axis);
     }
 
     //////////////////////////
@@ -46,6 +52,15 @@ public class LuaInputBinding {
         }
     }
     public bool IsMouseInWindow { get { return isMouseInWindow; } }
+
+    public bool isMouseVisible {
+        get { return Cursor.visible; }
+        set { Cursor.visible = value; }
+    }
+    public bool IsMouseVisible {
+        get { return isMouseVisible; }
+        set { isMouseVisible = value; }
+    }
 
     public float mouseScroll { get { return Input.mouseScrollDelta.y; } }
     public float MouseScroll { get { return mouseScroll; } }
