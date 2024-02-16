@@ -300,13 +300,6 @@ public class UIController : MonoBehaviour {
             PlayerController.instance.setControlOverride(true);
         }
 
-        if (state == "ACTIONSELECT" && newState != "ACTIONSELECT") {
-            fightButton.overrideSprite = null;
-            actButton.overrideSprite = null;
-            itemButton.overrideSprite = null;
-            mercyButton.overrideSprite = null;
-        }
-
         if (state == "ENEMYSELECT" && forcedAction == Actions.FIGHT)
             foreach (LifeBarController lbc in arenaParent.GetComponentsInChildren<LifeBarController>())
                 Destroy(lbc.gameObject);
@@ -318,7 +311,7 @@ public class UIController : MonoBehaviour {
                 LuaTextManager sbTextMan = enemy.bubbleObject.GetComponentInChildren<LuaTextManager>();
                 if (!sbTextMan)
                     continue;
-                sbTextMan.DestroyChars();
+                sbTextMan.HideTextObject();
             }
         } else if (state == "ATTACKING")
             FightUIController.instance.HideAttackingUI();
@@ -337,6 +330,7 @@ public class UIController : MonoBehaviour {
         }
 
         mainTextManager.SetMugshot(DynValue.NewNil());
+        SetPlayerOnAction(action);
 
         switch (state) {
             case "ATTACKING":
@@ -363,7 +357,6 @@ public class UIController : MonoBehaviour {
                 forcedAction = Actions.NONE;
                 PlayerController.instance.setControlOverride(true);
                 PlayerController.instance.GetComponent<Image>().enabled = true;
-                SetPlayerOnAction(action);
                 mainTextManager.SetPause(ArenaManager.instance.isResizeInProgress());
                 if (!GlobalControls.retroMode) {
                     mainTextManager.SetEffect(new TwitchEffect(mainTextManager));
@@ -586,6 +579,9 @@ public class UIController : MonoBehaviour {
     private void UpdateMonsterDialogue() {
         bool allGood = true;
         for (int i = 0; i < monsterDialogues.Length; i++) {
+            if (monsterDialogues[i] == null || !monsterDialogues[i].isactive)
+                continue;
+
             if (monsterDialogues[i].CanAutoSkipAll()) {
                 for (int j = 0; j < monsterDialogues.Length; j++)
                     readyToNextLine[encounter.enemies.IndexOf(monsterDialogueEnemy[j])] = true;
@@ -628,10 +624,10 @@ public class UIController : MonoBehaviour {
                 monsterDialogueEnemy[index].UpdateBubble(index);
                 someTextsHaveLinesLeft = true;
             } else {
-                monsterDialogues[index].DestroyChars();
+                monsterDialogues[index].HideTextObject();
                 monsterDialogueEnemy[index].HideBubble();
-                foreach (LuaTextManager textManager in monsterDialogues)
-                    if (textManager.HasNext())
+                foreach (LuaTextManager mgr in monsterDialogues)
+                    if (mgr != null && mgr.isactive && mgr.HasNext())
                         someTextsHaveLinesLeft = true;
             }
         } else if (!singleLineAll) {
@@ -640,11 +636,11 @@ public class UIController : MonoBehaviour {
                 if (!enemy.bubbleObject)
                     continue;
                 LuaTextManager sbTextMan = enemy.bubbleObject.GetComponentInChildren<LuaTextManager>();
-                if (!sbTextMan)
+                if (!sbTextMan || !sbTextMan.isactive)
                     continue;
 
                 if (sbTextMan.AllLinesComplete() && sbTextMan.LineCount() != 0 || (!sbTextMan.HasNext() && readyToNextLine[encounter.enemies.IndexOf(monsterDialogueEnemy[i])])) {
-                    sbTextMan.DestroyChars();
+                    sbTextMan.HideTextObject();
                     enemy.HideBubble();
                     continue;
                 }
@@ -655,7 +651,7 @@ public class UIController : MonoBehaviour {
                         sbTextMan.NextLineText();
                         enemy.UpdateBubble(i);
                     } else {
-                        sbTextMan.DestroyChars();
+                        sbTextMan.HideTextObject();
                         enemy.HideBubble();
                         continue;
                     }
@@ -671,7 +667,7 @@ public class UIController : MonoBehaviour {
                 if (!sbTextMan)
                     continue;
 
-                sbTextMan.DestroyChars();
+                sbTextMan.HideTextObject();
                 enemy.HideBubble();
             }
 
@@ -950,11 +946,12 @@ public class UIController : MonoBehaviour {
                     break;
 
                 case "ENEMYDIALOGUE":
-                    bool singleLineAll = monsterDialogues.Where(mgr => mgr != null).All(mgr => mgr.LineCount() <= 1 && mgr.CanSkip());
+                    bool singleLineAll = monsterDialogues.Where(mgr => mgr != null && mgr.isactive).All(mgr => mgr.LineCount() <= 1 && mgr.CanSkip());
                     if (singleLineAll) {
-                        foreach (TextManager mgr in monsterDialogues)
-                            mgr.DoSkipFromPlayer();
-                        mainTextManager.nextMonsterDialogueOnce = true;
+                        foreach (LuaTextManager mgr in monsterDialogues)
+                            if (mgr != null && mgr.isactive)
+                                mgr.DoSkipFromPlayer();
+                        DoNextMonsterDialogue(true);
                     } else if (!ArenaManager.instance.isResizeInProgress()) {
                         bool readyToSkip = readyToNextLine.All(b => b);
                         if (readyToSkip)
@@ -1020,18 +1017,8 @@ public class UIController : MonoBehaviour {
                 if (xMov == 0)
                     break;
 
-                int oldActionIndex = (int)action;
                 action = FindAvailableAction(left ? -1 : 1);
-                int actionIndex = (int)action;
-
-                if (oldActionIndex != actionIndex) {
-                    fightButton.overrideSprite = null;
-                    actButton.overrideSprite = null;
-                    itemButton.overrideSprite = null;
-                    mercyButton.overrideSprite = null;
-
-                    SetPlayerOnAction(action);
-                }
+                SetPlayerOnAction(action);
 
                 PlaySound(AudioClipRegistry.GetSound("menumove"));
                 break;
@@ -1097,7 +1084,9 @@ public class UIController : MonoBehaviour {
                 bool singleLineAll = true;
                 bool cannotSkip = false;
                 // why two booleans for the same result? 'cause they're different conditions
-                foreach (TextManager mgr in monsterDialogues) {
+                foreach (LuaTextManager mgr in monsterDialogues) {
+                    if (mgr != null && !mgr.isactive)
+                        continue;
                     if (!mgr.CanSkip())
                         cannotSkip = true;
 
@@ -1108,8 +1097,9 @@ public class UIController : MonoBehaviour {
                 if (cannotSkip || singleLineAll)
                     break;
 
-                foreach (TextManager mgr in monsterDialogues)
-                    mgr.DoSkipFromPlayer();
+                foreach (LuaTextManager mgr in monsterDialogues)
+                    if (mgr != null && mgr.isactive)
+                        mgr.DoSkipFromPlayer();
                 break;
 
             case "ACTMENU":
@@ -1140,24 +1130,25 @@ public class UIController : MonoBehaviour {
     }
 
     private void SetPlayerOnAction(Actions newAction) {
-        switch (newAction) {
-            case Actions.FIGHT: fightButton.overrideSprite = fightButtonSprite; break;
-            case Actions.ACT:   actButton.overrideSprite   = actButtonSprite;   break;
-            case Actions.ITEM:  itemButton.overrideSprite  = itemButtonSprite;  break;
-            case Actions.MERCY: mercyButton.overrideSprite = mercyButtonSprite; break;
-            default:            return;
-        }
-
-        if (state == "ACTIONSELECT")
-            PlayerController.instance.SetPosition(FindPlayerOffsetForAction(newAction).x, FindPlayerOffsetForAction(newAction).y, true);
-    }
-
-    public void MovePlayerToAction(Actions act) {
         fightButton.overrideSprite = null;
         actButton.overrideSprite = null;
         itemButton.overrideSprite = null;
         mercyButton.overrideSprite = null;
 
+        if (state == "ACTIONSELECT") {
+            switch (newAction) {
+                case Actions.FIGHT: fightButton.overrideSprite = fightButtonSprite; break;
+                case Actions.ACT:   actButton.overrideSprite   = actButtonSprite;   break;
+                case Actions.ITEM:  itemButton.overrideSprite  = itemButtonSprite;  break;
+                case Actions.MERCY: mercyButton.overrideSprite = mercyButtonSprite; break;
+                default:            return;
+            }
+
+            PlayerController.instance.SetPosition(FindPlayerOffsetForAction(newAction).x, FindPlayerOffsetForAction(newAction).y, true);
+        }
+    }
+
+    public void MovePlayerToAction(Actions act) {
         action = act;
         action = FindAvailableAction(0);
         SetPlayerOnAction(action);
@@ -1212,10 +1203,10 @@ public class UIController : MonoBehaviour {
         buttonSpriteDictionary.Add("ACT", actButtonSprite);
         buttonSpriteDictionary.Add("ITEM", itemButtonSprite);
         buttonSpriteDictionary.Add("MERCY", mercyButtonSprite);
-        buttonBasePositions.Add("FIGHT", new Vector2(32, 6));
-        buttonBasePositions.Add("ACT", new Vector2(185, 6));
-        buttonBasePositions.Add("ITEM", new Vector2(355, 6));
-        buttonBasePositions.Add("MERCY", new Vector2(500, 6));
+        buttonBasePositions.Add("FIGHT", new Vector2(0, 0));
+        buttonBasePositions.Add("ACT", new Vector2(154, 0));
+        buttonBasePositions.Add("ITEM", new Vector2(313, 0));
+        buttonBasePositions.Add("MERCY", new Vector2(467, 0));
         buttonBasePlayerPositions.Add("FIGHT", new Vector2(16, 19));
         buttonBasePlayerPositions.Add("ACT", new Vector2(16, 19));
         buttonBasePlayerPositions.Add("ITEM", new Vector2(16, 19));
@@ -1416,8 +1407,8 @@ public class UIController : MonoBehaviour {
                     SwitchState(stateAfterDialogs);
 
         if (state == "ENEMYDIALOGUE") {
-            if (monsterDialogues.All(mgr => mgr.CanAutoSkipThis())) DoNextMonsterDialogue();
-            else                                                    UpdateMonsterDialogue();
+            if (monsterDialogues.Where(mgr => mgr != null && mgr.isactive).All(mgr => mgr.CanAutoSkipThis())) DoNextMonsterDialogue();
+            else                                                                                              UpdateMonsterDialogue();
         }
 
         if (state == "DEFENDING") {

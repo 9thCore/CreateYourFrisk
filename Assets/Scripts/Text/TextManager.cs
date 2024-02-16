@@ -47,7 +47,6 @@ public class TextManager : MonoBehaviour {
     public int currentReferenceCharacter;
     private bool currentSkippable = true;
     private bool decoratedTextOffset;
-    [MoonSharpHidden] public bool nextMonsterDialogueOnce, wasStated;
     private RectTransform self;
 
     private float currentX;
@@ -95,6 +94,8 @@ public class TextManager : MonoBehaviour {
     public int columnShift = 265;
     public int columnNumber = 2;
 
+    protected bool hidden = true;
+
     // The rotation of the text
     public float rotation {
         get { return transform.eulerAngles.z; }
@@ -107,7 +108,7 @@ public class TextManager : MonoBehaviour {
 
     [MoonSharpHidden] public ScriptWrapper caller;
 
-    [MoonSharpHidden] public TextMessage[] textQueue = null;
+    [MoonSharpHidden] public TextMessage[] textQueue { get; protected set; }
     //public string[] mugshotsPath;
     //public bool overworld;
     [MoonSharpHidden] public bool skipNowIfBlocked = false;
@@ -123,7 +124,6 @@ public class TextManager : MonoBehaviour {
         currentCharacter = 0;
         currentReferenceCharacter = 0;
         decoratedTextOffset = false;
-        wasStated = false;
         instantActive = false;
         instantCommand = false;
         autoSkipAll = false;
@@ -237,6 +237,7 @@ public class TextManager : MonoBehaviour {
             SetMugshot(DynValue.NewNil());
             SetMugshotShift(oldLineHasMugshot);
         }
+        hidden = newTextQueue.Length == 0;
         textQueue = newTextQueue;
         currentLine = 0;
         ShowLine(0);
@@ -396,7 +397,7 @@ public class TextManager : MonoBehaviour {
             } else {
                 if (transform.parent.GetComponent<Image>().color.a == 1)
                     SetTextFrameAlpha(0);
-                DestroyChars();
+                HideTextObject();
             }
         }
 
@@ -457,10 +458,16 @@ public class TextManager : MonoBehaviour {
         currentReferenceCharacter = letters.Count;
     }
 
-    public void SetEffect(TextEffect effect) { textEffect = effect; }
+    public void SetEffect(TextEffect effect) {
+        if (textEffect != null)
+            textEffect.ResetPositions();
+        textEffect = effect;
+    }
     public void SetEffect(string effect, float intensity = -1, float step = 0) {
         if (effect == null)
             throw new CYFException("Text.SetEffect: The first argument (the effect name) is nil.\n\nSee the documentation for proper usage.");
+        if (textEffect != null)
+            textEffect.ResetPositions();
         switch (effect.ToLower()) {
             case "none":
                 textEffect = null;
@@ -480,12 +487,18 @@ public class TextManager : MonoBehaviour {
         }
     }
 
-    [MoonSharpHidden] public void DestroyChars() {
+    [MoonSharpHidden] protected void DestroyChars() {
         foreach (Transform child in gameObject.transform) {
             if (child.GetComponent<SpriteRenderer>() == null && child.GetComponent<Image>() == null) continue;
             LuaSpriteController.GetOrCreate(child.gameObject).Remove();
         }
+        textEffect = null;
         letters.Clear();
+    }
+
+    [MoonSharpHidden] public void HideTextObject() {
+        DestroyChars();
+        hidden = true;
     }
 
     private void SpawnTextSpaceTest(int i, string currentText, out string currentText2) {
@@ -798,7 +811,6 @@ public class TextManager : MonoBehaviour {
         string command     = UnitaleUtil.ParseCommandInline(textQueue[currentLine].Text, ref currentCharacter);
         if (command != null) {
             currentCharacter++; // we're not in a continuable loop so move to the character after the ] manually
-            wasStated = false;
 
             DynValue commandDV = DynValue.NewString(command);
             InUpdateControlCommand(commandDV, currentCharacter);
@@ -810,19 +822,7 @@ public class TextManager : MonoBehaviour {
     }
 
     protected virtual void Update() {
-        if (!UnitaleUtil.IsOverworld && nextMonsterDialogueOnce) {
-            bool test = true;
-            foreach (LuaTextManager mgr in UIController.instance.monsterDialogues) {
-                if (!mgr.IsFinished())
-                    test = false;
-            }
-            if (test) {
-                nextMonsterDialogueOnce = false;
-                if (!wasStated)
-                    UIController.instance.DoNextMonsterDialogue(true);
-                wasStated = false;
-            }
-        } else if (mugshot != null && mugshotList != null)
+        if (mugshot != null && mugshotList != null)
             if (UnitaleUtil.IsOverworld && mugshot.alpha != 0 && mugshotList.Length > 1) {
                 if (!mugshot.animcomplete && (letterTimer < 0 || LineComplete())) {
                     mugshot.StopAnimation();
@@ -831,7 +831,7 @@ public class TextManager : MonoBehaviour {
                     mugshot.SetAnimation(mugshotList, mugshotTimer);
             }
 
-        if (textQueue == null || textQueue.Length == 0 || textQueue[currentLine] == null || paused || lateStartWaiting)
+        if (!isactive || textQueue[currentLine] == null || paused || lateStartWaiting)
             return;
 
         if (textEffect != null)
@@ -904,6 +904,8 @@ public class TextManager : MonoBehaviour {
             if (im == null) return false;
             im.enabled = true;
             letterEffectStepCount += letterEffectStep;
+            if (im.GetComponent<Letter>().effect != null)
+                im.GetComponent<Letter>().effect.ResetPositions();
             switch (letterEffect.ToLower()) {
                 case "twitch": im.GetComponent<Letter>().effect = new TwitchEffectLetter(im.GetComponent<Letter>(), letterIntensity, (int)letterEffectStep);   break;
                 case "rotate": im.GetComponent<Letter>().effect = new RotatingEffectLetter(im.GetComponent<Letter>(), letterIntensity, letterEffectStepCount); break;
@@ -1173,9 +1175,6 @@ public class TextManager : MonoBehaviour {
                             caller.Call(args[0], argsbis, true);
                     } else if (caller != null)
                         caller.Call(cmds[1], null, true);
-
-                    if (cmds[1] == "State")
-                        wasStated = true;
                 } catch (InterpreterException ex) { UnitaleUtil.DisplayLuaError(caller.scriptname, UnitaleUtil.FormatErrorSource(ex.DecoratedMessage, ex.Message) + ex.Message); }
                 break;
 
@@ -1367,5 +1366,9 @@ public class TextManager : MonoBehaviour {
         if (negative)
             return -number;
         return number;
+    }
+
+    public virtual bool isactive {
+        get { return !hidden; }
     }
 }
